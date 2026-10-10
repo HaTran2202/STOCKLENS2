@@ -12,6 +12,14 @@ import html
 import math
 import base64
 import mimetypes
+import sys
+
+# Keep Windows console/log output usable for Vietnamese provider messages.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError, ValueError):
+        pass
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -26,6 +34,10 @@ from src.valuation import analyze_valuation
 from src.news_analysis import analyze_news
 from src.scoring import market_risk, score_all
 from src.report import generate_pdf
+from src.watchlist import get_recipient, list_watchlist, remove_entry, save_entry
+from src.email_delivery import send_report_email
+from src.branding import logo_data_uri
+from src.thesis import build_thesis, recommendation as build_recommendation
 
 
 # -----------------------------------------------------------------------------
@@ -91,14 +103,19 @@ html,body,[class*="css"]{font-family:Inter,"Segoe UI",Arial,sans-serif}
 .sl-brand{font-size:1.45rem;font-weight:900;color:var(--navy);letter-spacing:-.03em;line-height:1}.sl-brand span{color:#1874CC}
 .sl-tag{font-size:.60rem;color:#74869C;margin-top:3px}
 
-.st-key-nav_overview button,.st-key-nav_analysis button,.st-key-nav_report button,.st-key-nav_about button{
+.st-key-nav_overview button,.st-key-nav_analysis button,.st-key-nav_report button,.st-key-nav_watchlist button,.st-key-nav_about button{
   min-height:42px!important;border:none!important;border-radius:0!important;
   background:transparent!important;color:#38506E!important;box-shadow:none!important;
   font-size:.80rem!important;font-weight:730!important;padding-left:.45rem!important;padding-right:.45rem!important;
   border-bottom:3px solid transparent!important;
 }
-.st-key-nav_overview button:hover,.st-key-nav_analysis button:hover,.st-key-nav_report button:hover,.st-key-nav_about button:hover{
+.st-key-nav_overview button:hover,.st-key-nav_analysis button:hover,.st-key-nav_report button:hover,.st-key-nav_watchlist button:hover,.st-key-nav_about button:hover{
   color:#1067C5!important;background:rgba(231,244,255,.58)!important;
+}
+.st-key-stocklens_topbar [data-testid="stFormSubmitButton"] button{
+  min-height:40px!important;border-radius:11px!important;
+  background:linear-gradient(110deg,#176FD1,#1597CA)!important;
+  color:#FFFFFF!important;-webkit-text-fill-color:#FFFFFF!important;border:none!important;
 }
 .st-key-stocklens_topbar div[data-testid="stForm"]{background:transparent!important;border:none!important;box-shadow:none!important;padding:0!important;margin:0!important}
 .sl-top-search [data-testid="stTextInput"] input{background:#FAFDFF!important;border:1px solid #D4E3F2!important;border-radius:12px!important;min-height:40px!important}
@@ -167,6 +184,7 @@ div[data-testid="stTextInput"] input::placeholder{
 }
 
 /* Date input */
+div[data-testid="stDateInput"] [data-baseweb="input"],
 div[data-testid="stDateInput"] div[data-baseweb="input"] > div,
 div[data-testid="stDateInput"] input{
   background:#FAFDFF!important;
@@ -184,7 +202,9 @@ div[data-testid="stDateInput"] svg{
 }
 
 /* Selectbox / multiselect */
+div[data-testid="stSelectbox"] [data-baseweb="select"],
 div[data-testid="stSelectbox"] div[data-baseweb="select"] > div,
+div[data-testid="stMultiSelect"] [data-baseweb="select"],
 div[data-testid="stMultiSelect"] div[data-baseweb="select"] > div{
   background:#FAFDFF!important;
   color:#173150!important;
@@ -263,7 +283,8 @@ button[data-testid="stBaseButton-primary"]:hover{
 }
 .sl-company:after{content:"";position:absolute;right:-35px;bottom:-54px;width:190px;height:120px;border-radius:50%;background:rgba(65,176,218,.09)}
 .sl-company-logo{height:66px;width:66px;min-width:66px;border-radius:16px;background:#fff;border:1px solid rgba(255,255,255,.95);box-shadow:0 8px 20px rgba(32,75,122,.12);display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;z-index:2}
-.sl-company-logo img{width:50px;height:50px;object-fit:contain}.sl-ticker-logo{height:66px;width:66px;border-radius:16px;background:linear-gradient(145deg,#0B4B8B,#1A87DF);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:1.15rem}
+.sl-company-logo img{width:50px;height:50px;object-fit:contain}
+.sl-recommendation{width:235px;min-width:215px;padding:10px 12px;border:1px solid #D9E8F6;border-radius:13px;background:#F4F9FF;position:relative;z-index:2;font-size:.68rem;color:#536C87}.sl-rec-row{display:flex;justify-content:space-between;gap:6px;margin-top:4px}.sl-rec-row b{text-align:right;color:#173150}.sl-rec-positive{color:#078759;font-weight:800}.sl-rec-neutral{color:#B27615;font-weight:800}.sl-rec-caution{color:#C34250;font-weight:800}.sl-rec-note{display:block;color:#8292A4;margin-top:5px;font-size:.58rem}.sl-ticker-logo{height:66px;width:66px;border-radius:16px;background:linear-gradient(145deg,#0B4B8B,#1A87DF);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:1.15rem}
 .sl-company-main{flex:1;position:relative;z-index:2}.sl-company-title{font-size:1.36rem;font-weight:900;color:var(--navy);letter-spacing:-.02em}.sl-company-name{font-size:.82rem;font-weight:680;color:#385576;margin-top:2px}.sl-meta{font-size:.69rem;color:#637992;margin-top:6px}
 .sl-price-panel{min-width:255px;display:grid;grid-template-columns:1.05fr .95fr;gap:10px;position:relative;z-index:2}
 .sl-price-card{background:rgba(255,255,255,.84);border:1px solid rgba(204,221,239,.92);border-radius:13px;padding:10px 12px}.sl-price-label{font-size:.62rem;color:#70849B;font-weight:700}.sl-price-value{font-size:1.45rem;font-weight:900;color:#0C3C73;margin-top:3px}.sl-price-change{font-size:.68rem;margin-top:3px;font-weight:730}.sl-mini-stats{font-size:.64rem;color:#61758D;line-height:1.75}.sl-mini-stats b{float:right;color:#183D68}
@@ -350,6 +371,40 @@ div[data-testid="stDataFrame"]{border:1px solid #D7E5F3;border-radius:12px;overf
 .sl-insight-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}.sl-insight{background:rgba(255,255,255,.91);border:1px solid #D7E5F3;border-radius:14px;padding:13px;min-height:155px;box-shadow:0 8px 20px rgba(35,75,125,.05)}.sl-insight h4{margin:0 0 9px;color:var(--navy);font-size:.85rem}.sl-insight ul{margin:0;padding-left:17px}.sl-insight li{margin:0 0 5px;font-size:.72rem;color:#44556B;line-height:1.38}.sl-insight-conclusion{background:linear-gradient(120deg,#EDF7FF,#F7F0FF)}
 
 @media(max-width:1000px){.sl-price-panel{display:none}.sl-insight-grid{grid-template-columns:1fr}.st-key-stocklens_topbar{position:static}.sl-brand-wrap{min-width:auto}}
+
+/* =========================================================
+   STOCKLENS v2 - hero, quan điểm, luận điểm đầu tư, thẻ báo cáo
+   ========================================================= */
+.sl-company{
+  background:linear-gradient(115deg,#0B2B55 0%,#12427F 55%,#176FD1 100%)!important;
+  border:none!important;border-radius:20px!important;padding:18px 22px!important;
+  box-shadow:0 18px 40px rgba(11,43,85,.22)!important;gap:18px!important;
+}
+.sl-company:after{background:rgba(255,255,255,.07)!important}
+.sl-company .sl-company-title{color:#FFFFFF!important;font-size:1.7rem!important}
+.sl-company .sl-company-name{color:#D6E7FF!important;font-size:.95rem!important}
+.sl-company .sl-meta{color:#A8C5E8!important}
+.sl-company-logo{height:76px!important;width:76px!important;min-width:76px!important;border-radius:18px!important;background:#fff!important;overflow:hidden}
+.sl-company-logo img{width:60px!important;height:60px!important;object-fit:contain!important;border-radius:10px}
+.sl-recommendation{width:315px!important;min-width:280px!important;background:#FFFFFF!important;border:none!important;border-left:5px solid #E99A19!important;border-radius:14px!important;padding:12px 14px!important;box-shadow:0 8px 22px rgba(0,0,0,.14)}
+.sl-recbox-positive{border-left-color:#16A36F!important}.sl-recbox-neutral{border-left-color:#E99A19!important}.sl-recbox-caution{border-left-color:#E05262!important}
+.sl-recommendation .sl-rec-state{font-size:1.12rem!important;font-weight:900!important;margin:2px 0 6px!important}
+.sl-rec-hint{font-size:.68rem;line-height:1.45;color:#3F5876;margin-top:7px;padding-top:6px;border-top:1px dashed #D3E2F2}
+.sl-price-card{background:rgba(255,255,255,.95)!important}
+
+.sl-side-card{background:linear-gradient(150deg,#0B2B55,#176FD1);border-radius:16px;padding:16px 16px 14px;color:#fff;box-shadow:0 12px 28px rgba(11,43,85,.2);margin-bottom:10px}
+.sl-side-kicker{font-size:.58rem;letter-spacing:.09em;color:#A8C8F0;font-weight:700}
+.sl-side-ticker{font-size:2rem;font-weight:900;line-height:1.1;margin-top:6px}
+.sl-side-name{font-size:.78rem;color:#D6E7FF;margin-top:2px}
+.sl-side-meta{font-size:.68rem;color:#A8C8F0;margin-top:10px;line-height:1.6}
+
+.sl-thesis-grid{display:grid;grid-template-columns:1.35fr 1fr;gap:14px;margin-bottom:12px}
+.sl-thesis-card{background:#fff;border:1px solid #D7E5F3;border-radius:16px;padding:16px 18px;box-shadow:0 10px 26px rgba(35,75,125,.07)}
+.sl-thesis-card h3{margin:0 0 8px;font-size:1rem;font-weight:880;color:#0B2B55}
+.sl-thesis-card p{margin:0 0 9px;font-size:.82rem;line-height:1.68;color:#2A4361;text-align:justify}
+.sl-thesis-pos{border-top:4px solid #16A36F}.sl-thesis-neg{border-top:4px solid #E05262}
+.sl-conclusion{background:linear-gradient(110deg,#EDF5FF,#F4EFFF);border:1px solid #D5E4F5;border-radius:12px;padding:11px 15px;font-size:.8rem;line-height:1.6;color:#27415F;margin-bottom:6px}
+@media(max-width:1000px){.sl-thesis-grid{grid-template-columns:1fr}.sl-recommendation{width:100%!important}}
 </style>
 """,
     unsafe_allow_html=True,
@@ -505,7 +560,7 @@ COMPANY_DOMAINS = {
 def _local_logo_data_uri(ticker: str):
     base = Path(__file__).resolve().parent
     for folder in (base / "assets" / "logos", base / "assets" / "company_images", base / "logos"):
-        for ext in ("png", "jpg", "jpeg", "webp"):
+        for ext in ("png", "jpg", "jpeg", "webp", "svg"):
             path = folder / f"{ticker.upper()}.{ext}"
             if path.exists():
                 mime = mimetypes.guess_type(path.name)[0] or "image/png"
@@ -514,23 +569,22 @@ def _local_logo_data_uri(ticker: str):
     return None
 
 
+@st.cache_data(show_spinner=False)
+def _logo_cached(ticker: str, website: str, domain: str):
+    return logo_data_uri(ticker, website or None, domain or None)
+
+
 def company_logo_src(ticker: str, company: dict):
-    local = _local_logo_data_uri(ticker)
-    if local:
-        return local
-    website = (company or {}).get("website") or ""
-    domain = COMPANY_DOMAINS.get(ticker.upper())
-    if not domain and website:
-        domain = website.replace("https://", "").replace("http://", "").split("/")[0].replace("www.", "")
-    if domain:
-        return f"https://www.google.com/s2/favicons?domain={domain}&sz=128"
-    return None
+    """Logo thật (assets/logos/<MÃ>.png hoặc tải theo tên miền) hoặc monogram - không bao giờ vỡ ảnh."""
+    domain = COMPANY_DOMAINS.get(ticker.upper()) or ""
+    return _logo_cached(ticker.upper(), (company or {}).get("website") or "", domain)
 
 
 NAV_PAGES = {
     "overview": "Tổng quan",
     "analysis": "Phân tích cổ phiếu",
     "report": "Báo cáo đầu tư",
+    "watchlist": "Danh mục",
     "about": "Giới thiệu hệ thống",
 }
 
@@ -555,7 +609,7 @@ def topbar() -> str:
     current_page = get_current_page()
     active_key = {
         "overview": "nav_overview", "analysis": "nav_analysis",
-        "report": "nav_report", "about": "nav_about",
+        "report": "nav_report", "watchlist": "nav_watchlist", "about": "nav_about",
     }.get(current_page, "nav_overview")
 
     st.markdown(
@@ -572,8 +626,8 @@ def topbar() -> str:
     )
 
     with st.container(key="stocklens_topbar"):
-        brand, n1, n2, n3, n4, search_col = st.columns(
-            [2.7, 1.05, 1.45, 1.25, 1.50, 3.1], gap="small"
+        brand, n1, n2, n3, n4, n5, search_col = st.columns(
+            [2.45, 0.95, 1.35, 1.12, 1.28, 0.95, 2.65], gap="small"
         )
         with brand:
             st.markdown(
@@ -590,7 +644,8 @@ def topbar() -> str:
             (n1, "overview", "Tổng quan", "nav_overview"),
             (n2, "analysis", "Phân tích cổ phiếu", "nav_analysis"),
             (n3, "report", "Báo cáo đầu tư", "nav_report"),
-            (n4, "about", "Giới thiệu hệ thống", "nav_about"),
+            (n4, "watchlist", "Danh mục", "nav_watchlist"),
+            (n5, "about", "Giới thiệu hệ thống", "nav_about"),
         ]
         for col, page_key, label, key in nav_specs:
             with col:
@@ -852,26 +907,41 @@ def component_chart(summary):
     return fig
 
 
+def recent_news_points(results, sentiment, limit=1):
+    items = [
+        item for item in (results.get("news", {}).get("items", []) or [])
+        if isinstance(item, dict) and item.get("sentiment") == sentiment and item.get("title")
+    ]
+    def recency(item):
+        parsed = pd.to_datetime(item.get("published"), errors="coerce", utc=True)
+        return 0 if pd.isna(parsed) else int(parsed.value)
+    items.sort(key=recency, reverse=True)
+    points = []
+    for item in items[:limit]:
+        published = str(item.get("published") or "không rõ ngày")
+        source = str(item.get("source_name") or item.get("source") or "")
+        source_text = f" | {source}" if source else ""
+        points.append(f"Tin {('tích cực' if sentiment == 'Positive' else 'tiêu cực')} mới ({published}{source_text}): {item['title']}")
+    return points
+
+
 def collect_insights(results):
     positives, risks = [], []
     names = {"technical":"Kỹ thuật", "fundamental":"Tài chính", "valuation":"Định giá", "news":"Tin tức", "risk":"Rủi ro"}
     for key in ["fundamental", "valuation", "technical", "news", "risk"]:
         res = results.get(key, {}) or {}
-
         positive_items = list(res.get("positives", []) or [])
         risk_items = list(res.get("risks", []) or [])
-
-        # Peer Valuation là lớp bổ sung của Valuation. Đưa một phần insight
-        # peer lên trang tổng quan nhưng KHÔNG thay Valuation Score gốc.
         if key == "valuation":
             positive_items += list(res.get("peer_positives", []) or [])
             risk_items += list(res.get("peer_risks", []) or [])
-
-        for item in positive_items[:2]:
-            positives.append(f"{names[key]}: {item}")
-        for item in risk_items[:2]:
-            risks.append(f"{names[key]}: {item}")
-    return positives[:5], risks[:5]
+        positives.extend(f"{names[key]}: {item}" for item in positive_items[:2])
+        risks.extend(f"{names[key]}: {item}" for item in risk_items[:2])
+    positive_news = recent_news_points(results, "Positive")
+    negative_news = recent_news_points(results, "Negative")
+    def unique(items):
+        return list(dict.fromkeys(str(item) for item in items if item))
+    return unique(positive_news + positives)[:5], unique(negative_news + risks)[:5]
 
 
 def insight_html(title, items, extra_class=""):
@@ -1011,6 +1081,28 @@ def render_analysis_form():
         except Exception as exc:
             pdf_error = str(exc)
 
+        email_status = None
+        try:
+            recipient = get_recipient(display_ticker)
+        except Exception as exc:
+            recipient = None
+            email_status = {"sent": False, "recipient": "danh mục", "error": str(exc)}
+        if recipient:
+            if default_pdf:
+                try:
+                    send_report_email(
+                        recipient=recipient,
+                        ticker=display_ticker,
+                        company_name=company.get("name", display_ticker),
+                        pdf_bytes=default_pdf,
+                        filename=f"StockLens_{display_ticker}_{end}.pdf",
+                    )
+                    email_status = {"sent": True, "recipient": recipient}
+                except Exception as exc:
+                    email_status = {"sent": False, "recipient": recipient, "error": str(exc)}
+            else:
+                email_status = {"sent": False, "recipient": recipient, "error": "Không gửi được vì PDF chưa tạo thành công."}
+
         st.session_state["analysis"] = {
             "ticker": display_ticker,
             "input_ticker": ticker_input,
@@ -1024,6 +1116,7 @@ def render_analysis_form():
             "financial_data": financial_data,
             "pdf": default_pdf,
             "pdf_error": pdf_error,
+            "email_status": email_status,
         }
         st.session_state.pop("custom_pdf", None)
         progress.progress(100, text="Hoàn tất phân tích.")
@@ -1060,7 +1153,48 @@ def render_empty_state(page: str):
                 go_to("analysis")
 
 
-def render_company_strip(ticker, company, df=None, results=None):
+def recommendation_html(summary, results, close, profile=None):
+    profile = profile or (st.session_state.get("analysis") or {}).get("profile") or "Cân bằng"
+    rec = build_recommendation(summary or {}, results or {}, profile, close)
+    tone = rec["tone"]
+    score_text = "N/A" if rec["score"] is None else f"{rec['score']:.1f}/100"
+    price = rec["price"] if rec["price"] is not None else finite(close)
+    price_text = "N/A" if price is None else f"{price:,.0f} VND"
+    ref = rec["ref_value"]
+    peer_text = "Chưa có dữ liệu" if ref is None else f"{ref:,.0f} VND" + ("" if rec["upside"] is None else f" ({rec['upside']:+.1%})")
+    return (
+        f'<div class="sl-recommendation sl-recbox-{tone}">'
+        '<div class="sl-rec-heading">Quan điểm StockLens</div>'
+        f'<div class="sl-rec-state sl-rec-{tone}">{esc(rec["stance"])} theo mô hình</div>'
+        f'<div class="sl-rec-row"><span>Investment Score ({esc(profile)})</span><b>{esc(score_text)}</b></div>'
+        f'<div class="sl-rec-row"><span>Giá gần nhất</span><b>{esc(price_text)}</b></div>'
+        f'<div class="sl-rec-row"><span>Giá trị tham chiếu (peers)</span><b>{esc(peer_text)}</b></div>'
+        f'<div class="sl-rec-hint">{esc(rec["hint"])}</div>'
+        '<div class="sl-rec-note">Giá trị peers không phải giá mục tiêu; không phải khuyến nghị cá nhân.</div>'
+        '</div>'
+    )
+
+
+def thesis_html(th):
+    paras = "".join(f"<p>{esc(x)}</p>" for x in th["thesis"]) or "<p>Chưa đủ dữ liệu để xây dựng luận điểm đầu tư.</p>"
+    risks = "".join(f"<p>{esc(x)}</p>" for x in th["risks"]) or "<p>Chưa ghi nhận rủi ro nổi bật từ dữ liệu hiện có.</p>"
+    return (
+        '<div class="sl-thesis-grid">'
+        f'<div class="sl-thesis-card sl-thesis-pos"><h3>Luận điểm đầu tư chính</h3>{paras}</div>'
+        f'<div class="sl-thesis-card sl-thesis-neg"><h3>Rủi ro cần lưu ý</h3>{risks}</div>'
+        '</div>'
+        f'<div class="sl-conclusion"><b>Kết luận</b> · {esc(th["conclusion"])}</div>'
+        + (f'<div class="sl-rec-hint">Giới hạn mô hình: {esc(th["limitations"])}</div>' if th.get("limitations") else "")
+    )
+
+
+def render_thesis(ticker, company, results, summary, financial_data, profile, close):
+    th = build_thesis(ticker, company, results, summary, financial_data, profile, close)
+    st.markdown('<div class="sl-section-title">Luận điểm đầu tư &amp; rủi ro cần lưu ý</div>', unsafe_allow_html=True)
+    st.markdown(thesis_html(th), unsafe_allow_html=True)
+
+
+def render_company_strip(ticker, company, df=None, results=None, summary=None):
     logo = company_logo_src(ticker, company)
     if logo:
         logo_html = f'<div class="sl-company-logo"><img src="{esc(logo)}" alt="{esc(ticker)} logo"></div>'
@@ -1083,6 +1217,7 @@ def render_company_strip(ticker, company, df=None, results=None):
         low = finite(recent["Low"].min()) if "Low" in recent else None
         volume = finite(df.iloc[-1].get("Volume"))
 
+    recommendation = recommendation_html(summary or {}, results or {}, close)
     change_text = "N/A" if change is None else f"{change:+.2%}"
     change_color = "#15986B" if (change or 0) >= 0 else "#D84F61"
     price_panel = ""
@@ -1105,6 +1240,7 @@ def render_company_strip(ticker, company, df=None, results=None):
         f"""
 <div class="sl-company">
   {logo_html}
+  {recommendation}
   <div class="sl-company-main">
     <div class="sl-company-title">{esc(ticker)}</div>
     <div class="sl-company-name">{esc(company['name'])}</div>
@@ -1122,7 +1258,7 @@ def render_overview_page(a, ticker, start, end, profile, df, results, summary, c
     rsk = results["risk"]
     currency = company["currency"]
 
-    render_company_strip(ticker, company, df=df, results=results)
+    render_company_strip(ticker, company, df=df, results=results, summary=summary)
 
     main_col, report_col = st.columns([4.25, 1.15], gap="small")
     with main_col:
@@ -1159,18 +1295,13 @@ def render_overview_page(a, ticker, start, end, profile, df, results, summary, c
             )
 
     with report_col:
-        st.markdown('<div class="sl-report-rail"><div class="sl-panel-title">Báo cáo phân tích</div>', unsafe_allow_html=True)
         st.markdown(
-            f"""
-<div class="sl-cover">
-  <div class="sl-cover-brand">▥ STOCKLENS</div>
-  <div class="sl-cover-kicker">BÁO CÁO PHÂN TÍCH<br>DOANH NGHIỆP</div>
-  <div class="sl-cover-ticker">{esc(ticker)}</div>
-  <div class="sl-cover-name">{esc(company['name'])}</div>
-  <div class="sl-cover-meta">Hồ sơ: {esc(profile)}<br>Sàn: {esc(company['exchange'])}<br>Cập nhật: {esc(company['last_date'])}</div>
-  <div class="sl-cover-wave"></div>
-</div>
-""",
+            '<div class="sl-side-card">'
+            '<div class="sl-side-kicker">BÁO CÁO PHÂN TÍCH DOANH NGHIỆP</div>'
+            f'<div class="sl-side-ticker">{esc(ticker)}</div>'
+            f'<div class="sl-side-name">{esc(company["name"])}</div>'
+            f'<div class="sl-side-meta">Hồ sơ: {esc(profile)}<br>Sàn: {esc(company["exchange"])}<br>Cập nhật: {esc(company["last_date"])}</div>'
+            '</div>',
             unsafe_allow_html=True,
         )
         if a.get("pdf"):
@@ -1183,11 +1314,10 @@ def render_overview_page(a, ticker, start, end, profile, df, results, summary, c
                 use_container_width=True,
                 key="top_pdf_download",
             )
-            st.caption("Báo cáo nghiên cứu 8 trang • PDF")
+            st.caption("Báo cáo nghiên cứu PDF có mục lục")
         else:
             st.warning("PDF chưa tạo được trong lần chạy này.")
 
-        st.markdown('<div class="sl-panel-title" style="margin-top:14px">Thông tin nhanh</div>', unsafe_allow_html=True)
         is_bank = str(financial_data.get("financialBusinessType") or "").lower() == "bank"
         quick_rows = [
             quick_row("Kỳ BCTC", company.get("report_period") or "N/A"),
@@ -1203,20 +1333,12 @@ def render_overview_page(a, ticker, start, end, profile, df, results, summary, c
         else:
             quick_rows.insert(1, quick_row("Doanh thu", fmt_money(financial_data.get("totalRevenue"), currency)))
             quick_rows.append(quick_row("Debt/Equity", "N/A" if financial_data.get("debtToEquity") is None else f"{financial_data['debtToEquity']:.2f}x"))
-        quick = "".join(quick_rows)
-        st.markdown(quick + '</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="sl-panel" style="margin-top:10px"><div class="sl-panel-title">Thông tin nhanh</div>' + "".join(quick_rows) + '</div>',
+            unsafe_allow_html=True,
+        )
 
-    positives, risks = collect_insights(results)
-    conclusion = preliminary_conclusion(summary, profile)
-    st.markdown('<div class="sl-section-title">Tổng quan đầu tư</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="sl-insight-grid">'
-        + insight_html("Điểm nổi bật", positives)
-        + insight_html("Rủi ro cần lưu ý", risks)
-        + insight_html("Kết luận sơ bộ", [conclusion], "sl-insight-conclusion")
-        + '</div>',
-        unsafe_allow_html=True,
-    )
+    render_thesis(ticker, company, results, summary, financial_data, profile, finite(t.get("close")))
 
     if summary.get("missing"):
         st.warning("Investment Score chưa thể tính đầy đủ vì thiếu: " + ", ".join(summary["missing"]) + ". StockLens không tự nội suy thành phần bị thiếu.")
@@ -1229,7 +1351,7 @@ def render_analysis_page(ticker, profile, results, summary, company, financial_d
     n = results["news"]
     currency = company["currency"]
 
-    render_company_strip(ticker, company)
+    render_company_strip(ticker, company, results=results, summary=summary)
     positives, risks = collect_insights(results)
 
     st.markdown('<div class="sl-section-title">Phân tích cổ phiếu</div>', unsafe_allow_html=True)
@@ -1242,6 +1364,7 @@ def render_analysis_page(ticker, profile, results, summary, company, financial_d
     ])
 
     with tabs[0]:
+        render_thesis(ticker, company, results, summary, financial_data, profile, finite(t.get("close")))
         st.markdown('<div class="sl-section-title">Cấu trúc Investment Score</div>', unsafe_allow_html=True)
         c1, c2 = st.columns([1.25, 1], gap="medium")
         with c1:
@@ -1683,7 +1806,7 @@ def render_analysis_page(ticker, profile, results, summary, company, financial_d
 
 
 def render_report_page(a, ticker, start, end, profile, results, summary, company, financial_data):
-    render_company_strip(ticker, company, df=a.get("df"), results=results)
+    render_company_strip(ticker, company, df=a.get("df"), results=results, summary=summary)
 
     pdf_bytes = st.session_state.get("custom_pdf") or a.get("pdf")
 
@@ -1691,7 +1814,7 @@ def render_report_page(a, ticker, start, end, profile, results, summary, company
     with head_left:
         st.markdown(
             '<div class="sl-report-heading">▣ Báo cáo phân tích doanh nghiệp</div>'
-            f'<div class="sl-report-sub">Báo cáo nghiên cứu chi tiết 8 trang về {esc(ticker)} – {esc(company["name"])}</div>',
+            f'<div class="sl-report-sub">Báo cáo nghiên cứu chi tiết, có mục lục, về {esc(ticker)} – {esc(company["name"])}</div>',
             unsafe_allow_html=True,
         )
     with head_right:
@@ -1708,23 +1831,9 @@ def render_report_page(a, ticker, start, end, profile, results, summary, company
             st.markdown('<div class="sl-report-download-note">Tạo báo cáo với dữ liệu mới nhất</div>', unsafe_allow_html=True)
 
     st.markdown('<div style="height:7px"></div>', unsafe_allow_html=True)
-    nav_col, preview_col = st.columns([1.02, 3.58], gap="medium")
+    nav_col, preview_col = st.columns([0.90, 3.70], gap="medium")
 
     with nav_col:
-        st.markdown(
-            """
-<div class="sl-report-menu">
-  <div class="sl-report-menu-item"><span>▧</span><div><b>Tổng quan đầu tư</b><br><small>Thông tin chung và chỉ số nổi bật</small></div></div>
-  <div class="sl-report-menu-item"><span>⌁</span><div><b>Phân tích kỹ thuật</b><br><small>Xu hướng giá, động lượng, rủi ro</small></div></div>
-  <div class="sl-report-menu-item"><span>▥</span><div><b>Phân tích tài chính</b><br><small>KQKD, cân đối kế toán, dòng tiền</small></div></div>
-  <div class="sl-report-menu-item"><span>◔</span><div><b>Phân tích định giá</b><br><small>P/E, P/B và lịch sử định giá</small></div></div>
-  <div class="sl-report-menu-item"><span>▤</span><div><b>Tin tức & triển vọng</b><br><small>Cập nhật tin mới và triển vọng</small></div></div>
-  <div class="sl-report-menu-item active"><span>▣</span><div><b>Báo cáo phân tích</b><br><small>Tải báo cáo PDF chi tiết</small></div></div>
-</div>
-""",
-            unsafe_allow_html=True,
-        )
-
         st.markdown('<div class="sl-section-title" style="margin-top:12px">Tùy chọn báo cáo</div>', unsafe_allow_html=True)
         labels = {
             "technical": "Kỹ thuật", "fundamental": "Tài chính", "valuation": "Định giá",
@@ -1734,6 +1843,7 @@ def render_report_page(a, ticker, start, end, profile, results, summary, company
             "Nội dung đưa vào PDF",
             list(labels), default=list(labels), format_func=lambda k: labels[k], key="report_pdf_sections",
         )
+        st.caption("Trang bìa, mục lục, Tổng quan doanh nghiệp, Luận điểm đầu tư và Phương pháp & nguồn luôn có trong báo cáo.")
         if st.button("Tạo lại PDF", use_container_width=True, key="report_regenerate_pdf"):
             try:
                 custom_pdf = generate_pdf(
@@ -1771,6 +1881,41 @@ def render_report_page(a, ticker, start, end, profile, results, summary, company
         else:
             st.warning("PDF chưa được tạo trong lần phân tích hiện tại.")
         st.markdown('</div>', unsafe_allow_html=True)
+
+
+def render_watchlist_page():
+    st.markdown('<div class="sl-section-title">Danh mục gửi báo cáo tự động</div>', unsafe_allow_html=True)
+    st.caption("Khi phân tích thành công mã trong danh mục, StockLens sẽ gửi PDF đến email đã gán. Cấu hình SMTP trong .env để bật gửi.")
+    with st.form("watchlist_entry_form", clear_on_submit=True):
+        c1, c2, c3 = st.columns([1.1, 2.4, 1])
+        with c1:
+            ticker = st.text_input("Mã cổ phiếu", placeholder="FPT")
+        with c2:
+            recipient = st.text_input("Email nhận báo cáo", placeholder="khachhang@example.com")
+        with c3:
+            st.write("")
+            submitted = st.form_submit_button("Lưu vào danh mục", type="primary", use_container_width=True)
+    if submitted:
+        try:
+            save_entry(ticker, recipient)
+            st.success(f"Đã lưu {ticker.strip().upper()} và địa chỉ nhận.")
+            st.rerun()
+        except (ValueError, RuntimeError) as exc:
+            st.error(str(exc))
+
+    entries = list_watchlist()
+    st.markdown('<div class="sl-section-title">Mã đang theo dõi</div>', unsafe_allow_html=True)
+    if entries:
+        st.dataframe(pd.DataFrame(entries).rename(columns={"ticker": "Mã cổ phiếu", "email": "Email nhận"}), use_container_width=True, hide_index=True)
+        with st.form("watchlist_remove_form"):
+            selected = st.selectbox("Xóa mã khỏi danh mục", [row["ticker"] for row in entries])
+            remove = st.form_submit_button("Xóa mã")
+        if remove:
+            remove_entry(selected)
+            st.success(f"Đã xóa {selected} khỏi danh mục.")
+            st.rerun()
+    else:
+        st.info("Danh mục đang trống. Thêm mã và email để bật gửi PDF tự động.")
 
 
 def render_about_page():
@@ -1815,6 +1960,11 @@ def render_about_page():
 if current_page in {"overview", "analysis"}:
     render_analysis_form()
 
+if current_page == "watchlist":
+    render_watchlist_page()
+    st.caption("StockLens • Danh mục lưu cục bộ • Email chỉ được gửi khi bạn chạy phân tích cho mã đã đăng ký.")
+    st.stop()
+
 if current_page == "about":
     render_about_page()
     st.caption("StockLens • Giá: DNSE OpenAPI • BCTC/chỉ số: vnstock/KBS • Tin tức: Google News RSS • Dự án học tập • Không phải khuyến nghị mua/bán hoặc tư vấn đầu tư cá nhân.")
@@ -1836,6 +1986,12 @@ results = a["results"]
 summary = a["summary"]
 company = a["company"]
 financial_data = a["financial_data"]
+email_status = a.get("email_status")
+if email_status:
+    if email_status.get("sent"):
+        st.success(f"PDF đã tự động gửi đến {email_status.get('recipient')}.")
+    else:
+        st.warning(f"Không gửi được PDF đến {email_status.get('recipient')}: {email_status.get('error')}")
 
 if current_page == "overview":
     render_overview_page(a, ticker, start, end, profile, df, results, summary, company, financial_data)

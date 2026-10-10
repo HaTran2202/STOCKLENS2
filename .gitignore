@@ -5,3 +5,4 @@ __pycache__/
 charts/
 reports/
 .streamlit/secrets.toml
+/data/watchlist.json

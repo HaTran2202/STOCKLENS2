@@ -10,3 +10,5 @@ python-dotenv>=1.0,<2
 feedparser>=6.0,<7
 reportlab>=4.2,<5
 vnstock==4.0.8
+svglib>=1.5,<2
+Pillow>=10,<13
