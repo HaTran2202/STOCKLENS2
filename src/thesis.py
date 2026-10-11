@@ -193,7 +193,7 @@ def _p_business(ticker, company, fd, hist, profile):
     if not bank and de is not None:
         tail = {"Thận trọng": " Với nhà đầu tư thận trọng, đây là điểm cần đối chiếu với ngưỡng an toàn của ngành.",
                 "Tăng trưởng": " Đòn bẩy này cho thấy dư địa tài trợ cho kế hoạch mở rộng."}.get(profile, "")
-        parts.append(f"Nợ vay trên vốn chủ sở hữu ở mức {_x(de)}." + (tail if de else ""))
+        parts.append(f"Nợ phải trả/vốn chủ sở hữu ở mức {_x(de)}." + (tail if de else ""))
     return " ".join(parts)
 
 
@@ -229,6 +229,9 @@ def _p_valuation(ticker, results, hist, profile):
 
 def _p_catalysts(results):
     pos = _news(results, "Positive", 2)
+    # Tiêu đề hỗn hợp không được dùng làm luận cứ tích cực.
+    from .news_analysis import _classify_sentiment
+    pos = [p for p in pos if _classify_sentiment(p['title']).get('reason') == 'positive_keywords']
     if pos:
         lines = "; ".join(f"“{_clean_title(p['title'])}” ({p['date']})" for p in pos)
         return f"Về thông tin gần đây, các tin tích cực nổi bật gồm {lines}. Đây là các yếu tố có thể hỗ trợ tâm lý thị trường nếu được xác nhận bằng kết quả kinh doanh."

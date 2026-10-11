@@ -1,8 +1,15 @@
+# Credentials (never commit)
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+# Python
+.venv/
 __pycache__/
 *.pyc
-.venv/
-.env
+.pytest_cache/
+# Runtime
 charts/
 reports/
-.streamlit/secrets.toml
 /data/watchlist.json
+.DS_Store

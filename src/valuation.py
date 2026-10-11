@@ -823,7 +823,11 @@ def analyze_valuation(
     # =====================================================
 
     if score is not None:
-
+        freshness_warning = (
+            " Lưu ý: tỷ số từ CSV snapshot thiếu thời điểm công bố; đã đối chiếu mức giá hàm ý, "
+            "nhưng không thay thế chỉ số định giá đã kiểm toán." if
+            str(info.get('source') or '').startswith('CSV') else ""
+        )
         commentary = (
             f"Valuation Score đạt {score:.2f}/100, "
             f"xếp loại '{classification}'. "
@@ -832,6 +836,7 @@ def analyze_valuation(
             "của chính doanh nghiệp. "
             f"Có {coverage}/{total_components} "
             "thành phần đủ dữ liệu."
+            + freshness_warning
         )
 
     else:
@@ -868,38 +873,27 @@ def analyze_valuation(
         "commentary": "Chưa chạy Peer Valuation vì thiếu mã cổ phiếu.",
     }
 
+    # CSV offline peer comparison; source dates are not known, so labels must
+    # remain "snapshot tham khảo". Live ICB API is optional for KBS source.
+    import os
     if resolved_ticker:
         try:
-            try:
-                # Khi chạy theo cấu trúc package: src.valuation
+            if str(info.get('source') or '').startswith('CSV'):
+                from .csv_peer import analyze_csv_peers
+                peer_valuation = analyze_csv_peers(
+                    ticker=resolved_ticker, current_price=current_price,
+                    financial_data=info, max_peers=8,
+                ) or peer_valuation
+            elif os.environ.get('STOCKLENS_ENABLE_PEER_API','0')=='1':
                 from .peer_valuation import analyze_peer_valuation
-            except ImportError:
-                # Fallback khi chạy file trực tiếp trong một số môi trường test
-                from peer_valuation import analyze_peer_valuation
-
-            peer_valuation = analyze_peer_valuation(
-                ticker=resolved_ticker,
-                current_price=current_price,
-                max_peers=5,
-                financial_data=info,
-                request_delay=2.0,
-            ) or peer_valuation
-
-        except BaseException as exc:
-            # vnstock Community đôi lúc phát SystemExit khi rate-limit.
-            # Không để lỗi peer làm hỏng phần định giá lịch sử/Investment Score.
-            peer_valuation = {
-                **peer_valuation,
-                "commentary": (
-                    "Peer Valuation tạm thời chưa khả dụng: "
-                    f"{type(exc).__name__}: {exc}"
-                ),
-                "risks": [
-                    "Không lấy được dữ liệu peer trong lần chạy này; "
-                    "Valuation Score lịch sử vẫn được giữ nguyên."
-                ],
-            }
-
+                peer_valuation = analyze_peer_valuation(
+                    ticker=resolved_ticker, current_price=current_price, max_peers=6,
+                    financial_data=info, request_delay=1,
+                ) or peer_valuation
+        except Exception as exc:
+            peer_valuation = {**peer_valuation,
+                'commentary':f'Không thể tính Peer Valuation: {type(exc).__name__}: {exc}',
+                'risks':['Nguồn dữ liệu peers không khả dụng, không tạo giá hàm ý.']}
     peer_score = _num(peer_valuation.get("score"))
     peer_fair_value = _num(peer_valuation.get("peer_fair_value"))
     peer_upside_downside = _num(peer_valuation.get("upside_downside"))

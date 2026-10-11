@@ -1,12 +1,8 @@
 from __future__ import annotations
-
 import re
 import unicodedata
 from typing import Any
-
 import pandas as pd
-
-
 # =========================================================
 # STOCKLENS - VNSTOCK FINANCIAL DATA
 #
@@ -17,538 +13,356 @@ import pandas as pd
 #   vnstock -> KBS
 #
 # IMPORTANT:
-# Current KBS/vnstock output on this machine returns annual
-# values in reverse order relative to year-column labels.
-# We normalize that below.
+# Use provider-labeled years as supplied by default. Do NOT flip years
+# merely because a company has a rising/falling profit trend.
+# A source-period problem must be independently verified before opt-in.
 # =========================================================
-
-
-REPAIR_KBS_REVERSED_PERIODS = True
-
-
+# Turn on ONLY temporarily after an independent year-by-year source audit.
+REPAIR_KBS_REVERSED_PERIODS = False
 # =========================================================
 # BASIC
 # =========================================================
-
 def normalize_ticker(ticker: str) -> str:
-
     if ticker is None:
         raise ValueError(
             "Mã cổ phiếu không được để trống."
         )
-
     ticker = str(
         ticker
     ).strip().upper()
-
     if not ticker:
         raise ValueError(
             "Mã cổ phiếu không được để trống."
         )
-
     if ticker.endswith(".VN"):
         ticker = ticker[:-3]
-
     return ticker
-
-
 def _safe_float(value):
-
-    if value is None:
+    """Convert a scalar to finite float without silently changing its unit."""
+    import math
+    if value is None or isinstance(value, bool):
         return None
-
     try:
-
-        value = float(value)
-
-        if pd.isna(value):
-            return None
-
-        return value
-
-    except (
-        TypeError,
-        ValueError,
-    ):
+        val = float(value)
+    except (TypeError, ValueError):
         return None
-
+    return val if math.isfinite(val) else None
 
 def _safe_divide(
     numerator,
     denominator,
 ):
-
     numerator = _safe_float(
         numerator
     )
-
     denominator = _safe_float(
         denominator
     )
-
     if (
         numerator is None
         or denominator is None
         or denominator == 0
     ):
         return None
-
     return (
         numerator
         / denominator
     )
-
-
 def _normalize_percent(value):
     """
     28.30 -> 0.2830
     0.283 -> 0.283
     """
-
     value = _safe_float(
         value
     )
-
     if value is None:
         return None
-
     if abs(value) > 1.5:
         return value / 100
-
     return value
-
-
-def _ensure_dataframe(
-    value,
-):
-
-    if isinstance(
-        value,
-        pd.DataFrame,
-    ):
-        return value.copy()
-
-    if value is None:
+def _ensure_dataframe(value):
+    """Make a copy and standardize period column keys to string."""
+    if isinstance(value, pd.DataFrame):
+        df = value.copy()
+    elif value is None:
         return pd.DataFrame()
-
-    try:
-        return pd.DataFrame(
-            value
-        )
-
-    except Exception:
-        return pd.DataFrame()
-
-
-# =========================================================
-# PERIOD
-# =========================================================
-
-_METADATA_COLUMNS = {
-    "item",
-    "item_id",
-    "item_en",
-    "unit",
-    "levels",
-    "row_number",
-    "code",
-    "name",
-}
-
+    else:
+        try:
+            df = pd.DataFrame(value)
+        except Exception:
+            return pd.DataFrame()
+    rename = {c: str(c).strip() for c in df.columns if _period_sort_key(str(c).strip()) != (-1, -1)}
+    return df.rename(columns=rename)
 
 def _period_sort_key(
     value: str,
 ):
-
     text = str(
         value
     ).strip()
-
     # 2026-Q3
     q = re.fullmatch(
         r"(\d{4})-Q([1-4])(?:_\d+)?",
         text,
     )
-
     if q:
-
         return (
             int(q.group(1)),
             int(q.group(2)),
         )
-
     # 2025
     y = re.fullmatch(
         r"\d{4}",
         text,
     )
-
     if y:
-
         return (
             int(text),
             5,
         )
-
     return (
         -1,
         -1,
     )
-
-
 def _get_period_columns(
     df: pd.DataFrame,
 ) -> list[str]:
-
     if (
         df is None
         or df.empty
     ):
         return []
-
     result = []
-
     for column in df.columns:
-
         text = str(column)
-
         if (
             _period_sort_key(text)
             != (-1, -1)
         ):
             result.append(text)
-
     result.sort(
         key=_period_sort_key,
         reverse=True,
     )
-
     return result
-
-
 def _latest_period(
     df: pd.DataFrame,
 ):
-
     periods = (
         _get_period_columns(df)
     )
-
     if not periods:
         return None
-
     return periods[0]
-
-
 # =========================================================
 # FIX KBS PERIOD ORDER
 # =========================================================
+def _repair_period_values(df: pd.DataFrame) -> pd.DataFrame:
+    """Opt-in emergency repair, not enabled in production by default.
 
-def _repair_period_values(
-    df: pd.DataFrame,
-) -> pd.DataFrame:
+    Only annual columns are eligible. Inverting all years across all
+    statements is unsafe without a source audit. A warning is emitted
+    every time this manual override is used.
     """
-    Dữ liệu thực tế máy hiện tại:
-
-        column 2025 -> value năm 2022
-        column 2024 -> value năm 2023
-        column 2023 -> value năm 2024
-        column 2022 -> value năm 2025
-
-    Vì vậy đảo VALUES giữa các cột năm,
-    giữ nguyên tên cột.
-
-    Ví dụ:
-        trước:
-        2025 = 44,009
-        2024 = 52,618
-        2023 = 62,849
-        2022 = 70,113
-
-        sau:
-        2025 = 70,113
-        2024 = 62,849
-        2023 = 52,618
-        2022 = 44,009
-    """
-
-    if (
-        df is None
-        or df.empty
-        or not REPAIR_KBS_REVERSED_PERIODS
-    ):
+    if df is None or df.empty or not REPAIR_KBS_REVERSED_PERIODS:
         return df
-
-    df = df.copy()
-
-    period_columns = (
-        _get_period_columns(df)
-    )
-
-    if len(period_columns) <= 1:
+    import warnings
+    annual_cols = [c for c in _get_period_columns(df) if re.fullmatch(r"20\d{2}", c)]
+    if len(annual_cols) < 2:
         return df
-
-    reversed_values = (
-        df[
-            list(
-                reversed(
-                    period_columns
-                )
-            )
-        ]
-        .to_numpy(
-            copy=True
-        )
+    warnings.warn(
+        "STOCKLENS: manual KBS year inversion enabled; independently verify years with issuer reports.",
+        RuntimeWarning, stacklevel=2,
     )
+    result = df.copy()
+    result.loc[:, annual_cols] = df[list(reversed(annual_cols))].to_numpy(copy=True)
+    return result
 
-    df.loc[
-        :,
-        period_columns
-    ] = reversed_values
+def _get_item_value(df: pd.DataFrame, item_ids: list[str], period: str | None = None):
+    """Select exact item_id and the requested period; never borrow another year.
 
-    return df
-
-
-# =========================================================
-# ITEM VALUE
-# =========================================================
-
-def _get_item_value(
-    df: pd.DataFrame,
-    item_ids: list[str],
-    period: str | None = None,
-):
+    When period is None, use the latest *labeled* period. Duplicate item_id
+    rows with non-null data are supported, but conflicting numbers fail closed.
     """
-    Lấy giá trị theo item_id.
-
-    Có trường hợp KBS trả nhiều row cùng item_id, trong đó row đầu tiên
-    là NaN nhưng row sau có giá trị thật. Vì vậy luôn duyệt toàn bộ
-    các row khớp trước khi kết luận thiếu dữ liệu.
-    """
-
-    if (
-        df is None
-        or df.empty
-        or "item_id" not in df.columns
-    ):
+    if df is None or df.empty or "item_id" not in df.columns:
         return None
-
-    normalized = (
-        df["item_id"]
-        .astype(str)
-        .str.strip()
-        .str.lower()
-    )
-
-    for item_id in item_ids:
-
-        target = (
-            str(item_id)
-            .strip()
-            .lower()
-        )
-
-        matches = df[
-            normalized == target
-        ]
-
-        if matches.empty:
+    selected = str(period) if period is not None else _latest_period(df)
+    if selected is None or selected not in df.columns:
+        return None
+    identifiers = df["item_id"].astype(str).str.strip().str.casefold()
+    for identifier in item_ids:
+        subset = df.loc[identifiers == str(identifier).strip().casefold()]
+        if subset.empty:
             continue
-
-        if (
-            period is not None
-            and period in matches.columns
-        ):
-
-            for _, row in matches.iterrows():
-
-                value = _safe_float(
-                    row[period]
-                )
-
-                if value is not None:
-                    return value
-
-        periods = (
-            _get_period_columns(
-                matches
-            )
-        )
-
-        for p in periods:
-
-            for _, row in matches.iterrows():
-
-                value = _safe_float(
-                    row[p]
-                )
-
-                if value is not None:
-                    return value
-
+        values = [_safe_float(v) for v in subset[selected].tolist()]
+        values = [v for v in values if v is not None]
+        if not values:
+            continue
+        if any(abs(v - values[0]) > max(1e-6, abs(values[0]) * 1e-8) for v in values[1:]):
+            return None  # conflicting duplicate rows: requires manual mapping
+        return values[0]
     return None
-
 
 def _normalize_search_text(value) -> str:
     """
     Chuẩn hóa text để fallback theo nhãn KBS.
-
     Ví dụ:
         "Vốn chủ sở hữu" -> "von chu so huu"
         "Tổng thu nhập hoạt động" -> "tong thu nhap hoat dong"
     """
-
     if value is None:
         return ""
-
-    text = str(value).strip().lower()
-
+    text = str(value).strip().lower().replace("đ", "d")
     text = unicodedata.normalize(
         "NFKD",
         text,
     )
-
     text = "".join(
         ch for ch in text
         if not unicodedata.combining(ch)
     )
-
     text = re.sub(
         r"[^a-z0-9]+",
         " ",
         text,
     )
-
     return re.sub(
         r"\s+",
         " ",
         text,
     ).strip()
-
-
 def _get_item_value_flexible(
     df: pd.DataFrame,
     item_ids: list[str],
     period: str | None = None,
     label_keywords: list[str] | None = None,
 ):
+    """Exact item ID first, followed by a conservative, period-safe label match.
+
+    Vague labels with several distinct candidate values are ambiguous and
+    return None. An explicitly requested year is NEVER replaced by another.
     """
-    Ưu tiên item_id chuẩn; nếu vnstock/KBS đổi item_id giữa nhóm ngành
-    thì fallback theo item/item_en/name.
-
-    Fallback chỉ dùng khi exact item_id không tìm thấy để tránh làm thay
-    đổi kết quả của các mã đang chạy ổn như FPT.
-    """
-
-    value = _get_item_value(
-        df=df,
-        item_ids=item_ids,
-        period=period,
-    )
-
-    if value is not None:
-        return value
-
-    if (
-        df is None
-        or df.empty
-        or not label_keywords
-    ):
+    exact = _get_item_value(df, item_ids, period=period)
+    if exact is not None:
+        return exact
+    if df is None or df.empty or not label_keywords:
         return None
-
-    search_columns = [
-        column
-        for column in [
-            "item_id",
-            "item",
-            "item_en",
-            "name",
-        ]
-        if column in df.columns
-    ]
-
-    if not search_columns:
+    target_period = str(period) if period is not None else _latest_period(df)
+    if target_period is None or target_period not in df.columns:
         return None
-
-    normalized_keywords = [
-        _normalize_search_text(keyword)
-        for keyword in label_keywords
-        if keyword
-    ]
-
-    for keyword in normalized_keywords:
-
+    candidate_columns = [c for c in ("item", "item_en", "name", "item_id") if c in df.columns]
+    if not candidate_columns:
+        return None
+    keywords = [_normalize_search_text(k) for k in label_keywords if k]
+    for keyword in keywords:
         if not keyword:
             continue
-
-        for _, row in df.iterrows():
-
-            row_text = " | ".join(
-                _normalize_search_text(
-                    row.get(column)
+        for exact_label in (True, False):
+            candidates = []
+            for _, row in df.iterrows():
+                labels = [_normalize_search_text(row.get(c)) for c in candidate_columns]
+                match = (keyword in labels) if exact_label else any(
+                    label.startswith(keyword + " ") or label.endswith(" " + keyword)
+                    for label in labels
                 )
-                for column in search_columns
-            )
-
-            if keyword not in row_text:
-                continue
-
-            if (
-                period is not None
-                and period in df.columns
-            ):
-
-                value = _safe_float(
-                    row.get(period)
-                )
-
-                if value is not None:
-                    return value
-
-            for p in _get_period_columns(df):
-
-                value = _safe_float(
-                    row.get(p)
-                )
-
-                if value is not None:
-                    return value
-
+                if match:
+                    n = _safe_float(row.get(target_period))
+                    if n is not None:
+                        candidates.append(n)
+            if candidates:
+                if all(abs(n - candidates[0]) <= max(1e-6, abs(candidates[0]) * 1e-8)
+                       for n in candidates[1:]):
+                    return candidates[0]
+                return None
     return None
 
+
+def _money_unit_multiplier(unit):
+    """Unit to VND multiplier; None means unit cannot be proven.
+
+    Only apply to financial statement money rows, not ratios or percentages.
+    """
+    if unit is None or pd.isna(unit):
+        return None
+    u = _normalize_search_text(unit)
+    if not u:
+        return None
+    if any(word in u for word in ("percent", "phan tram", "co phieu", "shares", "ratio", "lan")):
+        return 1.0 if ("vnd" in u or "dong" in u) else None
+    if "nghin ty" in u or "thousand billion" in u:
+        return 1e12
+    if "ty" in u or "billion" in u:
+        return 1e9
+    if "trieu" in u or "million" in u:
+        return 1e6
+    if "nghin" in u or "ngan" in u or "thousand" in u:
+        return 1e3
+    if any(word in u for word in ("vnd", "dong", "dollars", "vn d")):
+        return 1.0
+    return None
+
+
+def _normalize_statement_units(df: pd.DataFrame, statement: str):
+    """Normalize rows with explicit unit metadata to VND.
+
+    Keeps unrecognized/missing-unit rows unchanged and returns warnings, so
+    analysts can inspect original provider values rather than guess a factor.
+    Unit metadata is stored as 'original_unit' and normalized rows say VND.
+    """
+    if df is None or df.empty:
+        return df, []
+    out = df.copy()
+    warnings = []
+    periods = _get_period_columns(out)
+    if not periods:
+        return out, warnings
+    if "unit" not in out.columns:
+        warnings.append(f"{statement}: missing unit column; monetary scale unverified")
+        return out, warnings
+    out["original_unit"] = out["unit"]
+    for idx, row in out.iterrows():
+        unit = row.get("unit")
+        factor = _money_unit_multiplier(unit)
+        if factor is None:
+            warnings.append(f"{statement}: unknown unit at row {idx} ({str(unit)[:40]})")
+            continue
+        # Percentages and share counts must not be treated as monetary data.
+        norm_unit = _normalize_search_text(unit)
+        if not ("vnd" in norm_unit or "dong" in norm_unit or any(
+            x in norm_unit for x in ("nghin", "trieu", "ty", "billion", "million", "thousand")
+        )):
+            continue
+        for col in periods:
+            val = _safe_float(row.get(col))
+            if val is not None:
+                out.at[idx, col] = val * factor
+        out.at[idx, "unit"] = "VND"
+    return out, warnings
 
 def _statement_text_blob(
     *frames: pd.DataFrame,
 ) -> str:
-
     parts = []
-
     for df in frames:
-
         if (
             df is None
             or df.empty
         ):
             continue
-
         for column in [
             "item_id",
             "item",
             "item_en",
             "name",
         ]:
-
             if column not in df.columns:
                 continue
-
             parts.extend(
                 _normalize_search_text(value)
                 for value in df[column].dropna().astype(str).tolist()
             )
-
     return " | ".join(parts)
-
-
 def _detect_business_type(
     profile: dict[str, Any],
     income: pd.DataFrame,
@@ -556,11 +370,9 @@ def _detect_business_type(
 ) -> str:
     """
     Chỉ tách riêng ngân hàng khi có tín hiệu đủ rõ.
-
     Không gộp toàn bộ ngành tài chính vào ngân hàng vì CTCK/bảo hiểm có
     cấu trúc BCTC khác.
     """
-
     profile_text = _normalize_search_text(
         " ".join(
             str(profile.get(key) or "")
@@ -570,12 +382,10 @@ def _detect_business_type(
             ]
         )
     )
-
     statement_text = _statement_text_blob(
         income,
         balance,
     )
-
     bank_markers = [
         "ngan hang",
         "commercial bank",
@@ -587,230 +397,177 @@ def _detect_business_type(
         "loans to customers",
         "cho vay khach hang",
     ]
-
     if any(
         marker in profile_text
         or marker in statement_text
         for marker in bank_markers
     ):
         return "bank"
-
     return "corporate"
-
-
 # =========================================================
 # VNSTOCK
 # =========================================================
-
 def _call_ratio(
     equity,
     ticker: str | None,
     period: str,
 ):
-
     for name in [
         "ratios",
         "ratio",
     ]:
-
         method = getattr(
             equity,
             name,
             None,
         )
-
         if method is None:
             continue
-
         try:
-
             if ticker is None:
-
                 return method(
                     period=period
                 )
-
             return method(
                 symbol=ticker,
                 period=period,
             )
-
         except Exception:
             continue
-
     return pd.DataFrame()
-
-
 def _load_vnstock(
     ticker: str,
     period: str,
 ):
-
     from vnstock import Fundamental
-
     fa = Fundamental()
-
     # =====================================================
     # Unified API
     # =====================================================
-
     try:
-
         equity = fa.equity
-
         income = (
             equity.income_statement(
                 symbol=ticker,
                 period=period,
             )
         )
-
         balance = (
             equity.balance_sheet(
                 symbol=ticker,
                 period=period,
             )
         )
-
         cashflow = (
             equity.cash_flow(
                 symbol=ticker,
                 period=period,
             )
         )
-
         ratios = _call_ratio(
             equity=equity,
             ticker=ticker,
             period=period,
         )
-
     except Exception:
-
         # =================================================
         # Alternate vnstock build
         # =================================================
-
         equity = fa.equity(
             ticker
         )
-
         income = (
             equity.income_statement(
                 period=period
             )
         )
-
         balance = (
             equity.balance_sheet(
                 period=period
             )
         )
-
         cashflow = (
             equity.cash_flow(
                 period=period
             )
         )
-
         ratios = _call_ratio(
             equity=equity,
             ticker=None,
             period=period,
         )
-
     income = _ensure_dataframe(
         income
     )
-
     balance = _ensure_dataframe(
         balance
     )
-
     cashflow = _ensure_dataframe(
         cashflow
     )
-
     ratios = _ensure_dataframe(
         ratios
     )
-
+    # =====================================================
+    # FINANCIAL STATEMENT UNIT NORMALIZATION (row metadata)
+    # =====================================================
+    income, income_unit_warnings = _normalize_statement_units(income, "income")
+    balance, balance_unit_warnings = _normalize_statement_units(balance, "balance")
+    cashflow, cashflow_unit_warnings = _normalize_statement_units(cashflow, "cashflow")
+    # ratio unit values (P/E, ROE, EPS, BVPS) are handled separately and
+    # MUST NOT be multiplied as though the entire ratios table held money.
     # =====================================================
     # FIX YEAR MAPPING
     # =====================================================
-
     income = _repair_period_values(
         income
     )
-
     balance = _repair_period_values(
         balance
     )
-
     cashflow = _repair_period_values(
         cashflow
     )
-
     ratios = _repair_period_values(
         ratios
     )
-
-    return (
-        income,
-        balance,
-        cashflow,
-        ratios,
-    )
-
-
+    unit_warnings = income_unit_warnings + balance_unit_warnings + cashflow_unit_warnings
+    for frame in (income, balance, cashflow, ratios):
+        frame.attrs["stocklens_unit_warnings"] = unit_warnings
+    return (income, balance, cashflow, ratios)
 # =========================================================
 # COMPANY PROFILE
 # =========================================================
-
 def _get_company_profile(
     ticker: str,
 ) -> dict[str, Any]:
-
     result = {
         "name": ticker,
         "exchange": None,
         "industry": None,
         "business_model": None,
     }
-
     try:
-
         from vnstock import Reference
-
         ref = Reference()
-
         try:
-
             df = ref.company.info(
                 symbol=ticker
             )
-
         except Exception:
-
             company = ref.company(
                 ticker
             )
-
             try:
                 df = company.info()
-
             except Exception:
                 df = company.overview()
-
         df = _ensure_dataframe(
             df
         )
-
         if df.empty:
             return result
-
         row = df.iloc[0]
-
         # Company name
         for key in [
             "company_name",
@@ -820,20 +577,16 @@ def _get_company_profile(
             "shortName",
             "name",
         ]:
-
             if (
                 key in row.index
                 and pd.notna(
                     row[key]
                 )
             ):
-
                 result["name"] = str(
                     row[key]
                 )
-
                 break
-
         # Exchange
         for key in [
             "exchange",
@@ -841,22 +594,18 @@ def _get_company_profile(
             "exchangeCode",
             "comGroupCode",
         ]:
-
             if (
                 key in row.index
                 and pd.notna(
                     row[key]
                 )
             ):
-
                 result[
                     "exchange"
                 ] = str(
                     row[key]
                 )
-
                 break
-
         # Industry
         for key in [
             "industry",
@@ -867,22 +616,18 @@ def _get_company_profile(
             "icbName3",
             "sector",
         ]:
-
             if (
                 key in row.index
                 and pd.notna(
                     row[key]
                 )
             ):
-
                 result[
                     "industry"
                 ] = str(
                     row[key]
                 )
-
                 break
-
         # Description
         for key in [
             "business_model",
@@ -891,47 +636,36 @@ def _get_company_profile(
             "companyProfile",
             "businessDescription",
         ]:
-
             if (
                 key in row.index
                 and pd.notna(
                     row[key]
                 )
             ):
-
                 result[
                     "business_model"
                 ] = str(
                     row[key]
                 )
-
                 break
-
     except Exception:
         pass
-
     return result
-
-
 # =========================================================
 # HISTORY
 # =========================================================
-
 def _build_history(
     income,
     balance,
     ratios,
     business_type: str = "corporate",
 ):
-
     periods = (
         _get_period_columns(
             income
         )
     )
-
     history = []
-
     revenue_ids = [
         "revenue",
         "net_revenue",
@@ -940,7 +674,6 @@ def _build_history(
         "total_income",
         "operating_revenue",
     ]
-
     revenue_labels = [
         "revenue",
         "net revenue",
@@ -949,7 +682,6 @@ def _build_history(
         "total operating income",
         "tong thu nhap hoat dong",
     ]
-
     equity_ids = [
         "owners_equity_2",
         "owners_equity_3",
@@ -961,18 +693,14 @@ def _build_history(
         "total_shareholders_equity",
         "equity_attributable_to_owners",
     ]
-
     for period in periods:
-
         revenue = _get_item_value_flexible(
             income,
             revenue_ids,
             period,
             revenue_labels,
         )
-
         gross_profit = None
-
         if business_type != "bank":
             gross_profit = _get_item_value_flexible(
                 income,
@@ -985,15 +713,11 @@ def _build_history(
                     "loi nhuan gop",
                 ],
             )
-
         history.append(
             {
                 "period": period,
-
                 "revenue": revenue,
-
                 "gross_profit": gross_profit,
-
                 "net_profit": (
                     _get_item_value_flexible(
                         income,
@@ -1013,7 +737,6 @@ def _build_history(
                         ],
                     )
                 ),
-
                 "total_assets": (
                     _get_item_value_flexible(
                         balance,
@@ -1028,7 +751,6 @@ def _build_history(
                         ],
                     )
                 ),
-
                 "equity": (
                     _get_item_value_flexible(
                         balance,
@@ -1042,7 +764,6 @@ def _build_history(
                         ],
                     )
                 ),
-
                 "roe": (
                     _normalize_percent(
                         _get_item_value(
@@ -1055,7 +776,6 @@ def _build_history(
                         )
                     )
                 ),
-
                 "roa": (
                     _normalize_percent(
                         _get_item_value(
@@ -1068,7 +788,6 @@ def _build_history(
                         )
                     )
                 ),
-
                 "pe": (
                     _get_item_value(
                         ratios,
@@ -1080,7 +799,6 @@ def _build_history(
                         period,
                     )
                 ),
-
                 "pb": (
                     _get_item_value(
                         ratios,
@@ -1094,32 +812,24 @@ def _build_history(
                 ),
             }
         )
-
     return history
-
-
 # =========================================================
 # MAIN
 # =========================================================
-
-def get_financial_data(
+def _get_financial_data_vnstock(
     ticker: str,
     period: str = "year",
 ) -> dict[str, Any]:
-
     ticker = normalize_ticker(
         ticker
     )
-
     if period not in {
         "year",
         "quarter",
     }:
-
         raise ValueError(
             "period chỉ nhận 'year' hoặc 'quarter'."
         )
-
     (
         income,
         balance,
@@ -1129,52 +839,42 @@ def get_financial_data(
         ticker=ticker,
         period=period,
     )
-
     if income.empty:
-
         raise RuntimeError(
             f"Không lấy được BCTC "
             f"cho {ticker} từ vnstock."
         )
-
     # =====================================================
     # PERIOD
     # =====================================================
-
     income_period = (
         _latest_period(
             income
         )
     )
-
     balance_period = (
         _latest_period(
             balance
         )
     )
-
     ratio_period = (
         _latest_period(
             ratios
         )
     )
-
     cashflow_period = (
         _latest_period(
             cashflow
         )
     )
-
     # =====================================================
     # PROFILE / BUSINESS TYPE
     # =====================================================
-
     profile = (
         _get_company_profile(
             ticker
         )
     )
-
     business_type = (
         _detect_business_type(
             profile=profile,
@@ -1182,11 +882,9 @@ def get_financial_data(
             balance=balance,
         )
     )
-
     # =====================================================
     # INCOME STATEMENT
     # =====================================================
-
     revenue_ids = [
         "revenue",
         "net_revenue",
@@ -1195,7 +893,6 @@ def get_financial_data(
         "total_income",
         "operating_revenue",
     ]
-
     revenue_labels = [
         "revenue",
         "net revenue",
@@ -1204,7 +901,6 @@ def get_financial_data(
         "total operating income",
         "tong thu nhap hoat dong",
     ]
-
     revenue = (
         _get_item_value_flexible(
             income,
@@ -1213,9 +909,7 @@ def get_financial_data(
             revenue_labels,
         )
     )
-
     gross_profit = None
-
     if business_type != "bank":
         gross_profit = (
             _get_item_value_flexible(
@@ -1230,7 +924,6 @@ def get_financial_data(
                 ],
             )
         )
-
     net_profit = (
         _get_item_value_flexible(
             income,
@@ -1250,7 +943,6 @@ def get_financial_data(
             ],
         )
     )
-
     eps_income = (
         _get_item_value(
             income,
@@ -1261,21 +953,16 @@ def get_financial_data(
             income_period,
         )
     )
-
     # =====================================================
     # REVENUE / OPERATING INCOME GROWTH
     # =====================================================
-
     revenue_growth = None
-
     income_periods = (
         _get_period_columns(
             income
         )
     )
-
     if len(income_periods) >= 2:
-
         current_revenue = (
             _get_item_value_flexible(
                 income,
@@ -1284,7 +971,6 @@ def get_financial_data(
                 revenue_labels,
             )
         )
-
         previous_revenue = (
             _get_item_value_flexible(
                 income,
@@ -1293,7 +979,6 @@ def get_financial_data(
                 revenue_labels,
             )
         )
-
         if (
             current_revenue is not None
             and previous_revenue
@@ -1302,17 +987,14 @@ def get_financial_data(
                 0,
             )
         ):
-
             revenue_growth = (
                 current_revenue
                 / previous_revenue
                 - 1
             )
-
     # =====================================================
     # BALANCE SHEET
     # =====================================================
-
     total_assets = (
         _get_item_value_flexible(
             balance,
@@ -1327,7 +1009,6 @@ def get_financial_data(
             ],
         )
     )
-
     current_assets = (
         _get_item_value_flexible(
             balance,
@@ -1343,7 +1024,6 @@ def get_financial_data(
             ],
         )
     )
-
     total_liabilities = (
         _get_item_value_flexible(
             balance,
@@ -1360,7 +1040,6 @@ def get_financial_data(
             ],
         )
     )
-
     current_liabilities = (
         _get_item_value_flexible(
             balance,
@@ -1376,7 +1055,6 @@ def get_financial_data(
             ],
         )
     )
-
     equity = (
         _get_item_value_flexible(
             balance,
@@ -1400,11 +1078,9 @@ def get_financial_data(
             ],
         )
     )
-
     # =====================================================
     # CASH FLOW
     # =====================================================
-
     operating_cash_flow = (
         _get_item_value_flexible(
             cashflow,
@@ -1421,11 +1097,9 @@ def get_financial_data(
             ],
         )
     )
-
     # =====================================================
     # RATIOS
     # =====================================================
-
     roe = _normalize_percent(
         _get_item_value(
             ratios,
@@ -1436,7 +1110,6 @@ def get_financial_data(
             ratio_period,
         )
     )
-
     roa = _normalize_percent(
         _get_item_value(
             ratios,
@@ -1447,7 +1120,6 @@ def get_financial_data(
             ratio_period,
         )
     )
-
     net_margin = (
         _normalize_percent(
             _get_item_value(
@@ -1461,7 +1133,6 @@ def get_financial_data(
             )
         )
     )
-
     # Với doanh nghiệp thông thường có thể fallback LNST / doanh thu.
     # Với ngân hàng không ép tỷ lệ này vì "doanh thu" được thay bằng
     # tổng thu nhập hoạt động và không hoàn toàn tương đương net margin
@@ -1470,18 +1141,15 @@ def get_financial_data(
         net_margin is None
         and business_type != "bank"
     ):
-
         net_margin = (
             _safe_divide(
                 net_profit,
                 revenue,
             )
         )
-
     # --------------------------
     # P/E
     # --------------------------
-
     pe = _get_item_value(
         ratios,
         [
@@ -1491,11 +1159,9 @@ def get_financial_data(
         ],
         ratio_period,
     )
-
     # --------------------------
     # P/B
     # --------------------------
-
     pb = _get_item_value(
         ratios,
         [
@@ -1505,11 +1171,9 @@ def get_financial_data(
         ],
         ratio_period,
     )
-
     # --------------------------
     # BVPS
     # --------------------------
-
     book_value = (
         _get_item_value(
             ratios,
@@ -1521,11 +1185,9 @@ def get_financial_data(
             ratio_period,
         )
     )
-
     # --------------------------
     # EPS
     # --------------------------
-
     eps_ratio = (
         _get_item_value(
             ratios,
@@ -1537,26 +1199,20 @@ def get_financial_data(
             ratio_period,
         )
     )
-
     eps = (
         eps_ratio
         if eps_ratio is not None
         else eps_income
     )
-
     # =====================================================
     # DEBT / EQUITY
     # =====================================================
-
     if business_type == "bank":
-
         # Không dùng D/E kiểu doanh nghiệp thông thường cho ngân hàng.
         # Tiền gửi và các nguồn vốn huy động là cấu phần hoạt động cốt lõi,
         # nên đưa D/E vào cùng thang điểm với FPT/HPG có thể gây sai lệch.
         debt_to_equity = None
-
     else:
-
         debt_to_equity_raw = (
             _get_item_value(
                 ratios,
@@ -1567,7 +1223,6 @@ def get_financial_data(
                 ratio_period,
             )
         )
-
         # KBS có thể trả 48.84 tức 48.84%.
         # StockLens chuẩn hóa về decimal = 0.4884.
         debt_to_equity = (
@@ -1575,37 +1230,28 @@ def get_financial_data(
                 debt_to_equity_raw
             )
         )
-
         if debt_to_equity is None:
-
             debt_to_equity = (
                 _safe_divide(
                     total_liabilities,
                     equity,
                 )
             )
-
     # =====================================================
     # CURRENT RATIO
     # =====================================================
-
     if business_type == "bank":
-
         # Current Ratio không phải chỉ tiêu thanh khoản chuẩn để đánh giá
         # ngân hàng theo cùng cách với doanh nghiệp thông thường.
         current_ratio = None
-
     else:
-
         current_ratio = (
             _safe_divide(
                 current_assets,
                 current_liabilities,
             )
         )
-
         if current_ratio is None:
-
             current_ratio = (
                 _safe_float(
                     _get_item_value(
@@ -1617,11 +1263,9 @@ def get_financial_data(
                     )
                 )
             )
-
     # =====================================================
     # HISTORY
     # =====================================================
-
     history = (
         _build_history(
             income,
@@ -1630,49 +1274,62 @@ def get_financial_data(
             business_type=business_type,
         )
     )
-
+    # =====================================================
+    # DATA QUALITY (diagnostics for the calling app / PDF module)
+    # =====================================================
+    quality_warnings = list(income.attrs.get("stocklens_unit_warnings", []))
+    for label, value in (
+        ("revenue", revenue),
+        ("net_profit", net_profit),
+        ("total_assets", total_assets),
+        ("equity", equity),
+    ):
+        if value is None:
+            quality_warnings.append(f"Missing {label} for the stated financial period")
+    if revenue is not None and revenue <= 0:
+        quality_warnings.append("Revenue is nonpositive: verify period and units")
+    if total_assets is not None and total_assets <= 0:
+        quality_warnings.append("Total assets is nonpositive: verify period and units")
+    if (total_assets is not None and total_liabilities is not None
+            and equity is not None and total_assets != 0):
+        diff = abs(total_assets - total_liabilities - equity) / abs(total_assets)
+        if diff > 0.05:
+            quality_warnings.append(
+                f"Balance sheet identity differs by {diff:.1%}; verify unit and equity basis"
+            )
     # =====================================================
     # OUTPUT
     # =====================================================
-
     return {
-
         # Company
         "ticker": ticker,
-
         "name": (
             profile.get("name")
             or ticker
         ),
-
         "exchange": (
             profile.get(
                 "exchange"
             )
         ),
-
         "sector": (
             profile.get(
                 "industry"
             )
         ),
-
         "business_model": (
             profile.get(
                 "business_model"
             )
         ),
-
         "financialBusinessType": (
             business_type
         ),
-
         "revenueMetricLabel": (
             "Tổng thu nhập hoạt động"
             if business_type == "bank"
             else "Doanh thu"
         ),
-
         "notApplicableMetrics": (
             [
                 "grossProfit",
@@ -1682,115 +1339,91 @@ def get_financial_data(
             if business_type == "bank"
             else []
         ),
-
         # Fundamental
         "returnOnEquity": roe,
-
         "returnOnAssets": roa,
-
         "profitMargins": (
             net_margin
         ),
-
         "revenueGrowth": (
             revenue_growth
         ),
-
         "debtToEquity": (
             debt_to_equity
         ),
-
         "currentRatio": (
             current_ratio
         ),
-
         "totalRevenue": (
             revenue
         ),
-
         "netIncomeToCommon": (
             net_profit
         ),
-
         "grossProfit": (
             gross_profit
         ),
-
         "operatingCashFlow": (
             operating_cash_flow
         ),
-
         # Balance sheet
         "totalAssets": (
             total_assets
         ),
-
         "currentAssets": (
             current_assets
         ),
-
         "totalLiabilities": (
             total_liabilities
         ),
-
         "currentLiabilities": (
             current_liabilities
         ),
-
         "totalEquity": (
             equity
         ),
-
         # Valuation
         "trailingPE": pe,
-
         "priceToBook": pb,
-
         "forwardPE": None,
-
         "marketCap": None,
-
         "trailingEps": eps,
-
         "bookValue": (
             book_value
         ),
-
         # Period
         "reportPeriod": (
             income_period
         ),
-
         "financialStatementPeriod": (
             income_period
         ),
-
         "balanceSheetPeriod": (
             balance_period
         ),
-
         "ratioPeriod": (
             ratio_period
         ),
-
         "cashFlowPeriod": (
             cashflow_period
         ),
-
         "periodType": period,
-
         # Source
         "source": (
             "vnstock - KBS"
         ),
-
         "dataAvailable": True,
-
+        "unitWarnings": income.attrs.get("stocklens_unit_warnings", []),
+        "unitMetadataVerified": not bool(income.attrs.get("stocklens_unit_warnings", [])),
+        "valuationRatioSourcePeriod": ratio_period,
+        "valuationRatiosAreLive": False,
+        "qualityWarnings": quality_warnings,
+        "criticalDataReady": not bool(quality_warnings),
+        "netProfitBasis": "provider reported - verify consolidated vs parent attributable",
         # History
         "financialHistory": (
             history
         ),
-
         # Raw
         "_raw": {
             "income_statement": (
@@ -1807,191 +1440,179 @@ def get_financial_data(
             ),
         },
     }
-
-
 # =========================================================
 # TEST
 # =========================================================
 
-if __name__ == "__main__":
+# --- STOCKLENS CSV INTEGRATION V1 ---
+def get_financial_data(ticker: str, period: str = "year"):
+    """Prefer local CSV when present; otherwise use original vnstock backend."""
+    import os
+    from src.csv_data import csv_ready, get_csv_financial_data
+    mode = os.environ.get("STOCKLENS_FINANCIAL_SOURCE", "csv").strip().lower()
+    if mode not in ("auto", "csv", "vnstock"):
+        raise ValueError("STOCKLENS_FINANCIAL_SOURCE must be auto/csv/vnstock")
+    if mode != "vnstock" and period == "year":
+        if mode == "csv" and not csv_ready():
+            raise FileNotFoundError("Thiếu 5 CSV hoặc CSV rỗng; kiểm tra data/financials-market_2020-2026.")
+        if csv_ready():
+            try:
+                return get_csv_financial_data(ticker, period)
+            except KeyError:
+                if mode == "csv":
+                    raise
+            except ValueError as exc:
+                if mode == "csv" or "no mapped corporate revenue" not in str(exc):
+                    raise
+                # Bank-specific CSV mapping is unsupported. Use KBS instead.
+    return _get_financial_data_vnstock(ticker, period)
 
+if __name__ == "__main__":
     print(
         "===== STOCKLENS - VNSTOCK FINANCIAL TEST ====="
     )
-
     try:
-
         data = get_financial_data(
             ticker="FPT",
             period="year",
         )
-
         print()
         print(
             "Ticker:",
             data.get("ticker"),
         )
-
         print(
             "Company:",
             data.get("name"),
         )
-
         print(
             "Exchange:",
             data.get("exchange"),
         )
-
         print(
             "Sector:",
             data.get("sector"),
         )
-
         print()
-
         print(
             "Report Period:",
             data.get(
                 "reportPeriod"
             ),
         )
-
         print(
             "Source:",
             data.get(
                 "source"
             ),
         )
-
         print()
-
         print(
             "Revenue:",
             data.get(
                 "totalRevenue"
             ),
         )
-
         print(
             "Net Income:",
             data.get(
                 "netIncomeToCommon"
             ),
         )
-
         print(
             "Revenue Growth:",
             data.get(
                 "revenueGrowth"
             ),
         )
-
         print(
             "Total Assets:",
             data.get(
                 "totalAssets"
             ),
         )
-
         print(
             "Total Equity:",
             data.get(
                 "totalEquity"
             ),
         )
-
         print(
             "ROE:",
             data.get(
                 "returnOnEquity"
             ),
         )
-
         print(
             "ROA:",
             data.get(
                 "returnOnAssets"
             ),
         )
-
         print(
             "Profit Margin:",
             data.get(
                 "profitMargins"
             ),
         )
-
         print(
             "Debt / Equity:",
             data.get(
                 "debtToEquity"
             ),
         )
-
         print(
             "Current Ratio:",
             data.get(
                 "currentRatio"
             ),
         )
-
         print(
             "P/E:",
             data.get(
                 "trailingPE"
             ),
         )
-
         print(
             "P/B:",
             data.get(
                 "priceToBook"
             ),
         )
-
         print(
             "BVPS:",
             data.get(
                 "bookValue"
             ),
         )
-
         print(
             "EPS:",
             data.get(
                 "trailingEps"
             ),
         )
-
         print(
             "Operating Cash Flow:",
             data.get(
                 "operatingCashFlow"
             ),
         )
-
         print()
-
         print(
             "Financial History:"
         )
-
         for row in (
             data.get(
                 "financialHistory",
                 []
             )[:5]
         ):
-
             print(row)
-
         print()
         print(
             "vnstock financial test: OK"
         )
-
     except Exception as exc:
-
         print()
         print(
             "ERROR:"

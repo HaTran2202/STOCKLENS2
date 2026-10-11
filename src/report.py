@@ -47,9 +47,9 @@ except ImportError:  # chạy trực tiếp trong thư mục src
     from thesis import build_thesis
 
 # ----------------------------------------------------------------------------- phông chữ + màu
-NAVY, BLUE, TEAL = "#0B2B55", "#176FD1", "#11B7AE"
-TEXT, MUTED, LINE, SOFT = "#173150", "#6B7F99", "#D7E5F3", "#F4F8FC"
-GREEN, AMBER, RED, PURPLE = "#16A36F", "#E99A19", "#D84F61", "#7B61D9"
+NAVY, BLUE, TEAL = "#0A1930", "#215C93", "#12A9A4"
+TEXT, MUTED, LINE, SOFT = "#1B2F47", "#718097", "#DCE5ED", "#F3F7FA"
+GREEN, AMBER, RED, PURPLE = "#0F9178", "#DCA14B", "#CD5262", "#6C6DB3"
 C = lambda h: colors.HexColor(h)  # noqa: E731
 
 _FONT_READY = False
@@ -81,24 +81,28 @@ def _styles():
         base = dict(fontName="SL", fontSize=9, leading=13, textColor=C(TEXT))
         base.update(kw)
         s[name] = ParagraphStyle(name, **base)
-    add("body", alignment=TA_JUSTIFY, spaceAfter=5)
-    add("small", fontSize=7.5, leading=10, textColor=C(MUTED))
+    add("body", fontSize=9.2, leading=15.2, alignment=TA_JUSTIFY, spaceAfter=6)
+    add("small", fontSize=7.8, leading=11.2, textColor=C(MUTED))
     add("tiny", fontSize=6.5, leading=8.5, textColor=C(MUTED))
-    add("sec", fontName="SL-B", fontSize=16, leading=20, textColor=C(NAVY), spaceBefore=0, spaceAfter=2)
-    add("subsec", fontSize=8.5, leading=11, textColor=C(MUTED), spaceAfter=7)
-    add("h2", fontName="SL-B", fontSize=11, leading=14, textColor=C(BLUE), spaceBefore=8, spaceAfter=4)
-    add("kl", fontSize=7, leading=9, textColor=C(MUTED))
-    add("kv", fontName="SL-B", fontSize=12.5, leading=15.5, textColor=C(NAVY))
-    add("ks", fontSize=7, leading=9, textColor=C(MUTED))
-    add("cell", fontSize=8, leading=10.5)
-    add("cellb", fontName="SL-B", fontSize=8, leading=10.5, textColor=C(NAVY))
-    add("cellr", fontSize=8, leading=10.5, alignment=TA_RIGHT)
-    add("cellh", fontName="SL-B", fontSize=8, leading=10.5, textColor=C(NAVY))
+    add("sec", fontName="SL-B", fontSize=19, leading=25, textColor=C(NAVY), spaceBefore=3, spaceAfter=5, keepWithNext=1)
+    add("subsec", fontSize=9, leading=13, textColor=C(MUTED), spaceAfter=12, keepWithNext=1)
+    add("h2", fontName="SL-B", fontSize=11.5, leading=15, textColor=C(BLUE), spaceBefore=10, spaceAfter=6, keepWithNext=1)
+    add("kl", fontName="SL-B", fontSize=7.1, leading=10, textColor=C(MUTED))
+    add("kv", fontName="SL-B", fontSize=16, leading=20, textColor=C(NAVY))
+    add("ks", fontSize=6.9, leading=9.2, textColor=C(MUTED))
+    add("cell", fontSize=8.2, leading=11.1)
+    add("cellb", fontName="SL-B", fontSize=8.2, leading=11.1, textColor=C(NAVY))
+    add("cellr", fontSize=8.1, leading=11.1, alignment=TA_RIGHT)
+    add("cellh", fontName="SL-B", fontSize=8.1, leading=11.1, textColor=C(NAVY))
     add("cover_t", fontName="SL-B", fontSize=24, leading=28, textColor=C(NAVY))
     add("cover_n", fontSize=11, leading=14, textColor=C("#385576"))
     add("rec_t", fontName="SL-B", fontSize=15, leading=18)
-    add("toc0", fontSize=9.5, leading=15, leftIndent=0, textColor=C(TEXT))
-    add("bullet", fontSize=8.8, leading=12.5, leftIndent=9, bulletIndent=0, spaceAfter=3, alignment=TA_JUSTIFY)
+    add("toc0", fontSize=10, leading=24, leftIndent=0, textColor=C(TEXT))
+    add("bullet", fontSize=8.8, leading=13.7, leftIndent=9, bulletIndent=0, spaceAfter=4, alignment=TA_JUSTIFY)
+    add("editor_toc_title", fontName="SL-B", fontSize=24, leading=29, textColor=C(NAVY), spaceAfter=9)
+    add("editor_toc_intro", fontSize=10, leading=16, textColor=C(TEXT), spaceAfter=12)
+    add("editor_kicker", fontName="SL-B", fontSize=8, leading=11, textColor=C(TEAL), spaceAfter=8)
+    add("editor_summary", fontSize=10, leading=16.5, textColor=C(TEXT), spaceAfter=8)
     return s
 
 
@@ -381,11 +385,11 @@ def chart_news(items, width=CONTENT_W * 0.36, h=1.9):
 # ----------------------------------------------------------------------------- thành phần bố cục
 def _tbl(data, widths, header=True, align_right_from=None, zebra=True, extra=None):
     t = Table(data, colWidths=widths, repeatRows=1 if header else 0)
-    style = [("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    style = [("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
              ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
              ("LINEBELOW", (0, 0), (-1, -1), .4, C(LINE))]
     if header:
-        style += [("BACKGROUND", (0, 0), (-1, 0), C("#EAF3FC")), ("LINEBELOW", (0, 0), (-1, 0), .8, C(BLUE))]
+        style += [("BACKGROUND", (0, 0), (-1, 0), C("#EAF0F5")), ("LINEBELOW", (0, 0), (-1, 0), .9, C(TEAL))]
     if zebra:
         for r in range(1 if header else 0, len(data)):
             if (r % 2) == 0:
@@ -414,8 +418,8 @@ def _kpis(items, width=CONTENT_W):
                       Paragraph(f'<font color="{col}">{escape(str(val))}</font>', ST["kv"]),
                       Paragraph(escape(sub or ""), ST["ks"])])
     t = Table([cells], colWidths=[width / n] * n)
-    style = [("BACKGROUND", (0, 0), (-1, -1), C(SOFT)), ("VALIGN", (0, 0), (-1, -1), "TOP"),
-             ("LEFTPADDING", (0, 0), (-1, -1), 8), ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]
+    style = [("BACKGROUND", (0, 0), (-1, -1), C("#F6F8FA")), ("VALIGN", (0, 0), (-1, -1), "TOP"),
+             ("LEFTPADDING", (0, 0), (-1, -1), 9), ("RIGHTPADDING", (0, 0), (-1, -1), 6), ("TOPPADDING", (0, 0), (-1, -1), 11), ("BOTTOMPADDING", (0, 0), (-1, -1), 11)]
     for i, (_, _, _, col) in enumerate(items):
         style.append(("LINEBEFORE", (i, 0), (i, 0), 2.5, C(col)))
         if i:
@@ -459,67 +463,123 @@ def _price_stats(t, company):
     return close, chg, hi, lo, vol
 
 
-# ----------------------------------------------------------------------------- trang bìa
+# ----------------------------------------------------------------------------- biên tập báo cáo: bìa, mục lục
+# Bìa được vẽ trực tiếp bằng vector để sắc nét khi phóng to và không phụ thuộc internet.
+# Đồ thị trên bìa chỉ là hoạ tiết, KHÔNG được gọi là biểu đồ giá thực tế.
 def _cover(ticker, period_text, profile, results, summary, company, fd, th, toc):
-    t = results.get("technical") or {}
-    rec = th["recommendation"]
-    close, chg, hi, lo, vol = _price_stats(t, company)
+    v = results.get("valuation") or {}
+    rec = th.get("recommendation") or {}
     name = company.get("name") or ticker
-    web = company.get("website") or ""
-    domain = None
-    lg = logo_bytes(ticker, web)
-    logo = Image(io.BytesIO(lg), width=22 * mm, height=22 * mm)
-    logo._restrictSize(22 * mm, 22 * mm)  # giữ nguyên tỷ lệ logo, không ép thành hình vuông
+    t = results.get("technical") or {}
+    score = _f(rec.get("score"))
+    close, _, _, _, _ = _price_stats(t, company)
+    stance = rec.get("stance") or "Chưa đủ dữ liệu"
+    # Trang 1 được vẽ trong onPage, phần flowables chỉ tạo page break.
+    # Trang 2 là spread thông tin điều hướng báo cáo.
+    notes = [
+        "Báo cáo được xây dựng tự động từ dữ liệu giá, báo cáo tài chính và tin tức.",
+        "Điểm đầu tư là mô hình quy tắc tham khảo; không thay thế nghiên cứu doanh nghiệp.",
+        "Chỉ tiêu thiếu dữ liệu hoặc định giá peers không đáng tin cậy được ghi N/A.",
+    ]
+    return [
+        Spacer(1, 2 * mm), PageBreak(),
+        Paragraph("RESEARCH / STOCKLENS", ST["editor_kicker"]),
+        Spacer(1, 6 * mm),
+        Paragraph("Nội dung nghiên cứu", ST["editor_toc_title"]),
+        Paragraph(f"{escape(ticker)}  ·  {escape(str(name))}  |  Hồ sơ: {escape(str(profile))}", ST["editor_toc_intro"]),
+        _kpis([
+            ("ĐIỂM TỔNG HỢP", _fmt(score, 1) + "/100", stance, _tone_color(score)),
+            ("THỊ GIÁ", _fmt(rec.get("price") or close, 0), "VND/cổ phiếu", BLUE),
+            ("KỲ TÀI CHÍNH", str(fd.get("reportPeriod") or company.get("report_period") or "N/A"), "BCTC gần nhất trong dữ liệu", TEAL),
+        ]),
+        Spacer(1, 13 * mm),
+        Paragraph("CẤU TRÚC BÁO CÁO", ST["editor_kicker"]),
+        toc,
+        Spacer(1, 11 * mm),
+        _callout("Cách đọc báo cáo", [_p(x, "small") for x in notes], color=TEAL, bg="#F2F8F8"),
+        Spacer(1, 6 * mm),
+        _p("Dữ liệu có thể không đồng nhất về thời điểm; hãy đọc mục Phương pháp và giới hạn trước khi sử dụng điểm số.", "small"),
+        PageBreak(),
+    ]
 
-    head = Table([[logo, [Paragraph("BÁO CÁO PHÂN TÍCH CỔ PHIẾU", ST["small"]),
-                          Paragraph(escape(ticker), ST["cover_t"]),
-                          Paragraph(escape(name), ST["cover_n"]),
-                          Paragraph(escape(f"Sàn {company.get('exchange') or 'N/A'}  |  Ngành: {company.get('sector') or 'N/A'}  |  Hồ sơ: {profile}"), ST["small"])]]],
-                 colWidths=[28 * mm, CONTENT_W - 28 * mm])
-    head.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 0)]))
 
-    tone_col = {"positive": GREEN, "neutral": AMBER, "caution": RED}.get(rec["tone"], MUTED)
-    ref_txt = "Chưa có dữ liệu" if rec["ref_value"] is None else f"{rec['ref_value']:,.0f} VND" + (
-        "" if rec["upside"] is None else f" ({rec['upside'] * 100:+.1f}%)")
-    rec_box = [Paragraph("QUAN ĐIỂM STOCKLENS", ST["kl"]),
-               Paragraph(f'<font color="{tone_col}">{escape(rec["stance"])} theo mô hình</font>', ST["rec_t"]),
-               Spacer(1, 3),
-               _pm(f"Investment Score ({escape(profile)}): <b>{_fmt(rec['score'], 1)}/100</b>", "cell"),
-               _pm(f"Giá gần nhất: <b>{_fmt(rec['price'] or close, 0)} VND</b>", "cell"),
-               _pm(f"Giá trị tham chiếu (peers): <b>{escape(ref_txt)}</b>", "cell"),
-               Spacer(1, 3), Paragraph(escape(rec["hint"]), ST["small"])]
-    gauge = chart_gauge(rec["score"])
-    left = Table([[rec_box]], colWidths=[CONTENT_W * 0.64])
-    left.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), C("#F3F8FF")), ("LINEBEFORE", (0, 0), (0, -1), 3, C(tone_col)),
-                              ("LEFTPADDING", (0, 0), (-1, -1), 10), ("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8)]))
-    mid = _side_by_side(left, gauge, CONTENT_W * 0.64 + 6, CONTENT_W * 0.36 - 6)
+def _wrap_draw(canv, text, style, x, top, width, limit_height=None):
+    p = Paragraph(escape(str(text or "")), style)
+    _, ph = p.wrap(width, 1000)
+    if limit_height and ph > limit_height:
+        # Không để thông tin dài tràn vào phần khác của bìa; giữ thông tin quan trọng ở PDF bên trong.
+        p = Paragraph(escape(str(text or "")[:190].rsplit(" ", 1)[0] + "…"), style)
+        _, ph = p.wrap(width, 1000)
+    p.drawOn(canv, x, top - ph)
+    return ph
 
-    mc = _f(company.get("market_cap"))
-    k = [("Giá đóng cửa", f"{_fmt(close, 0)}", "VND" if close else "", NAVY),
-         ("Biến động phiên", "N/A" if chg is None else f"{chg * 100:+.2f}%", "so với phiên trước", GREEN if (chg or 0) >= 0 else RED),
-         ("Đỉnh 52 tuần", _fmt(hi, 0), "VND", NAVY),
-         ("Đáy 52 tuần", _fmt(lo, 0), "VND", NAVY),
-         ("P/E · P/B", f"{_fmt(company.get('pe') or (results.get('valuation') or {}).get('pe'), 1)} · {_fmt(company.get('pb') or (results.get('valuation') or {}).get('pb'), 1)}", "hiện tại", BLUE),
-         ("Vốn hóa", "N/A" if mc is None else f"{mc / 1e9:,.0f}", "tỷ VND", PURPLE)]
-    kp = _kpis(k)
 
-    def first_sentence(txt, limit=190):
-        txt = str(txt).strip()
-        cut = txt.find(". ")
-        out = txt if cut < 0 else txt[:cut + 1]
-        return (out[:limit].rsplit(" ", 1)[0] + "…") if len(out) > limit else out
-    hl = _bullets([first_sentence(x) for x in th["thesis"][:3]])
-    rk = _bullets([first_sentence(x) for x in th["risks"][:2]])
-    summary_box = _side_by_side(
-        _callout("Luận điểm chính", hl or [_p("Chưa đủ dữ liệu.", "small")], color=GREEN, bg="#EEF9F4", width=CONTENT_W * .5 - 4),
-        _callout("Rủi ro cần lưu ý", rk or [_p("Chưa ghi nhận rủi ro nổi bật.", "small")], color=RED, bg="#FFF3F4", width=CONTENT_W * .5 - 4),
-        CONTENT_W * .5, CONTENT_W * .5, gap=8)
-
-    toc_box = [Paragraph('<font color="%s"><b>MỤC LỤC</b></font>' % NAVY, ST["h2"]), toc]
-    return [head, Spacer(1, 5 * mm), mid, Spacer(1, 3 * mm), kp, Spacer(1, 4 * mm), summary_box, Spacer(1, 3 * mm),
-            Paragraph(escape(f"Khoảng dữ liệu: {period_text}   |   Ngày lập báo cáo: {datetime.now():%d/%m/%Y}"), ST["small"]),
-            Spacer(1, 1 * mm)] + toc_box + [PageBreak()]
-
+def _draw_cover_page(canv, ticker, period_text, profile, results, summary, company, th):
+    w, h = A4
+    canv.saveState()
+    canv.setFillColor(C(NAVY)); canv.rect(0, 0, w, h, fill=1, stroke=0)
+    # Họa tiết kiến trúc tài chính trừu tượng, KHÔNG phải đường giá FPT.
+    canv.setFillColor(C("#102844")); canv.roundRect(0, h * .46, w * 1.06, h * .27, 18, fill=1, stroke=0)
+    canv.setStrokeColor(C("#22415B")); canv.setLineWidth(.7)
+    for i in range(0, 18):
+        xx = 26 * mm + i * 12.0 * mm
+        canv.line(xx, h * .49, xx, h * .73)
+    for j in range(6):
+        yy = h * (.50 + j * .044)
+        canv.line(0, yy, w, yy)
+    # Dải nhịp công nghệ (đường trang trí không có thang số liệu)
+    pts = [(0,h*.53),(w*.10,h*.56),(w*.22,h*.55),(w*.34,h*.62),(w*.46,h*.595),
+           (w*.57,h*.65),(w*.67,h*.62),(w*.76,h*.69),(w*.84,h*.665),(w,h*.735)]
+    path = canv.beginPath();path.moveTo(*pts[0]);
+    for x,y in pts[1:]:path.lineTo(x,y)
+    canv.setStrokeColor(C("#1AAEA8"));canv.setLineWidth(3.0);canv.drawPath(path,stroke=1,fill=0)
+    for x,y in pts[1:-1:2]:
+        canv.setFillColor(C("#A4E0DB"));canv.circle(x,y,3.1,fill=1,stroke=0)
+    # Số chương mờ, độ sâu gần giống ngôn ngữ báo cáo biên tập.
+    canv.setFillColor(C("#143151"));canv.setFont("SL-B", 146)
+    canv.drawRightString(w-18*mm, h*.75, ticker[:4].upper())
+    x = 20*mm
+    canv.setFillColor(C("#59D2C6"));canv.setFont("SL-B", 10)
+    canv.drawString(x, h-24*mm, "STOCKLENS    /    EQUITY RESEARCH")
+    canv.setStrokeColor(C("#5DD1CB"));canv.setLineWidth(1.1)
+    canv.line(x,h-28*mm,w-20*mm,h-28*mm)
+    canv.setFillColor(colors.white);canv.setFont("SL",10)
+    canv.drawString(x,h-43*mm,"BÁO CÁO PHÂN TÍCH CƠ HỘI ĐẦU TƯ")
+    canv.setFont("SL-B",64)
+    canv.drawString(x,h-70*mm,ticker)
+    body = ParagraphStyle("cover_white",fontName="SL",fontSize=13.5,leading=19,textColor=C("#BFD2E0"))
+    _wrap_draw(canv,company.get("name") or ticker,body,x,h-74*mm,165*mm)
+    csector=str(company.get("sector") or "Chưa xác minh ngành")
+    ex=str(company.get("exchange") or "Chưa xác minh sàn")
+    canv.setFont("SL",9);canv.setFillColor(C("#D2E3EB"))
+    canv.drawString(x,h-100*mm, f"{ex}     ·     {csector}"[:92])
+    # Tóm tắt đánh giá bên dưới đồ thị trang trí
+    rec = th.get("recommendation") or {}
+    stance = rec.get("stance") or "Chưa đủ dữ liệu"
+    score = _f(rec.get("score"))
+    t=results.get("technical") or {}
+    close=_f(rec.get("price")) or _f(t.get("close"))
+    canv.setFillColor(C("#102844"));canv.roundRect(x, h*.32, w-2*x, 87, 12,fill=1,stroke=0)
+    canv.setFillColor(C("#5DD1CB"));canv.setFont("SL-B",8)
+    canv.drawString(x+14,h*.32+64,"QUAN ĐIỂM ĐẦU TƯ")
+    canv.setFillColor(colors.white);canv.setFont("SL-B",20)
+    canv.drawString(x+14,h*.32+37,str(stance)[:32])
+    canv.setFont("SL",9);canv.setFillColor(C("#C0D4E1"))
+    canv.drawString(x+14,h*.32+18,f"Hồ sơ {profile} · Score: {_fmt(score,1)}/100")
+    canv.setFillColor(C("#5DD1CB"));canv.setFont("SL-B",27)
+    canv.drawRightString(w-x-12,h*.32+38,_fmt(close,0))
+    canv.setFont("SL",8);canv.setFillColor(C("#BAD7DB"))
+    canv.drawRightString(w-x-12,h*.32+19,"VND / cổ phiếu")
+    # Methodology/cập nhật
+    canv.setFillColor(C("#A9C4D6"));canv.setFont("SL-B",8)
+    canv.drawString(x,h*.26,"PHẠM VI PHÂN TÍCH")
+    _wrap_draw(canv,period_text,ParagraphStyle("period",fontName="SL",fontSize=10,leading=14,textColor=colors.white),x,h*.245,w-2*x)
+    canv.setFillColor(C("#B4CDDA"));canv.setFont("SL",8)
+    canv.drawString(x, 30*mm, f"Công bố: {datetime.now():%d/%m/%Y}   ·   Đồ họa bìa mang tính biểu trưng")
+    canv.setStrokeColor(C("#31506A"));canv.line(x,24*mm,w-x,24*mm)
+    canv.setFillColor(C("#5DD1CB"));canv.setFont("SL-B",9)
+    canv.drawString(x,18*mm,"STOCKLENS / INVESTMENT INTELLIGENCE PLATFORM")
+    canv.restoreState()
 
 # ----------------------------------------------------------------------------- các mục nội dung
 def _sec_overview(ticker, company, results, summary, fd, profile):
@@ -550,6 +610,16 @@ def _sec_overview(ticker, company, results, summary, fd, profile):
         fl.append(chart_price(d))
     else:
         fl.append(_p("Chưa có dữ liệu giá để vẽ biểu đồ.", "small"))
+    hist = _history(fd)
+    if hist:
+        last = hist[-1]
+        highlight = []
+        for title, key in (("DOANH THU / THU NHẬP", "revenue"), ("LỢI NHUẬN SAU THUẾ", "net_profit"), ("TỔNG TÀI SẢN", "total_assets")):
+            if _f(last.get(key)) is not None:
+                highlight.append((title, _bn(last.get(key)), f"tỷ đồng · FY{last.get('period')}", BLUE))
+        if highlight:
+            fl += [Spacer(1, 8 * mm), Paragraph("Dữ liệu tài chính gần nhất", ST["h2"]), _kpis(highlight)]
+    fl += [Spacer(1, 5 * mm), _p("Biểu đồ thị trường và thông tin tài chính có thể có kỳ cập nhật khác nhau. Đối chiếu ngày dữ liệu và nguồn tại phần phương pháp.", "small")]
     return fl
 
 
@@ -576,8 +646,16 @@ def _sec_technical(results):
         fl += [Spacer(1, 6), chart_price(d, h=3.2), Spacer(1, 4), chart_rsi_macd(d)]
     sig = t.get("signals")
     if isinstance(sig, dict) and sig:
-        rows = [[Paragraph("Chỉ báo", ST["cellh"]), Paragraph("Tín hiệu", ST["cellh"])]] + [[_p(k, "cell"), _p(v, "cell")] for k, v in sig.items()]
-        fl += [Spacer(1, 6), _tbl(rows, [CONTENT_W * .5, CONTENT_W * .5])]
+        labels = {'Positive':'Tích cực','Negative':'Tiêu cực','Neutral':'Trung lập'}
+        rows = [[Paragraph(h, ST['cellh']) for h in ('Chỉ báo', 'Tín hiệu', 'Điểm')]]
+        for key, val in sig.items():
+            if isinstance(val, dict):
+                label = labels.get(str(val.get('signal')), str(val.get('signal') or 'N/A'))
+                score = _fmt(val.get('score'), 0)
+            else:
+                label, score = str(val), 'N/A'
+            rows.append([_p(key, 'cell'), _p(label, 'cell'), _p(score, 'cell')])
+        fl += [Spacer(1, 6), _tbl(rows, [CONTENT_W * .33]*3)]
     if t.get("commentary"):
         fl += [Spacer(1, 6), _callout("Nhận định kỹ thuật", [_p(t["commentary"])])]
     return fl
@@ -585,7 +663,7 @@ def _sec_technical(results):
 
 def _sec_fundamental(results, summary, fd, company):
     f = results.get("fundamental") or {}
-    hist = _history(fd)
+    hist = _history(fd)[-4:]
     fl = _section("Phân tích tài chính", "Kết quả kinh doanh, hiệu quả sinh lời, cấu trúc tài sản và đòn bẩy")
     sc = _f(f.get("score"))
     last = hist[-1] if hist else {}
@@ -598,8 +676,35 @@ def _sec_fundamental(results, summary, fd, company):
           ("ROE", "N/A" if roe is None else f"{roe * 100:.1f}%", "sinh lời VCSH", PURPLE),
           ("ROA", "N/A" if roa is None else f"{roa * 100:.1f}%", "sinh lời tài sản", AMBER)]
     fl.append(_kpis(kp))
+    if bank:
+        banking = [("NIM", fd.get('netInterestMargin')), ("NPL", fd.get('nplRatio')),
+                   ("CAR", fd.get('capitalAdequacyRatio')), ("CASA", fd.get('casaRatio')),
+                   ("LDR", fd.get('loanToDepositRatio'))]
+        fl += [Spacer(1, 5), _kpis([(label, 'N/A' if _ratio(value) is None else f'{_ratio(value)*100:.2f}%',
+                                     'Dữ liệu CSV FY, theo định nghĩa nguồn', BLUE)
+                                    for label,value in banking])]
+        fl += [Spacer(1, 4), _p('LLR chưa có dữ liệu: không tính hoặc suy đoán. LDR và CAR sử dụng định nghĩa của nhà cung cấp, cần đối chiếu báo cáo ngân hàng.', 'small')]
+    if fd.get("qualityWarnings"):
+        warnings = [str(x) for x in fd.get("qualityWarnings", []) if x][:3]
+        # Thay cảnh báo kỹ thuật tiếng Anh thành diễn giải dễ hiểu cho người đọc.
+        known = []
+        for warning in warnings:
+            low = warning.lower()
+            if "period_date" in low or "snapshot" in low or "market_cap/shares" in low:
+                text = "Chỉ số định giá từ CSV thiếu ngày cập nhật; cần kiểm chứng giá, kỳ EPS/BVPS trước khi kết luận."
+            elif "reported" in low and "ratio" in low:
+                text = "Chỉ số tài chính từ nguồn dữ liệu có thể dùng định nghĩa khác báo cáo kiểm toán."
+            else:
+                text = warning
+            if text not in known:
+                known.append(text)
+        fl += [Spacer(1, 5), _callout("Lưu ý chất lượng dữ liệu", [_p(x, "small") for x in known], color=AMBER, bg="#FBF7EE")]
     if hist:
-        fl += [Spacer(1, 6), chart_fin(hist), Spacer(1, 4), chart_balance(hist)]
+        fl += [Spacer(1, 6), chart_fin(hist)]
+        if any(_f(x.get('total_assets')) is not None or _f(x.get('equity')) is not None for x in hist):
+            fl += [Spacer(1, 4), chart_balance(hist)]
+        else:
+            fl += [Spacer(1, 3), _p('Chưa có dữ liệu tài sản/vốn chủ sở hữu để vẽ biểu đồ.', 'small')]
         hdr = [Paragraph("Chỉ tiêu (tỷ đồng)", ST["cellh"])] + [Paragraph(f"<b>{r['period']}</b>", ST["cellr"]) for r in hist]
         def row(label, key, scale=1e9, fmt="{:,.0f}", ratio=False):
             vals = []
@@ -614,6 +719,7 @@ def _sec_fundamental(results, summary, fd, company):
         fl += [Spacer(1, 6), _tbl(rows, [CONTENT_W * .30] + [CONTENT_W * .70 / n] * n)]
     if f.get("commentary"):
         fl += [Spacer(1, 6), _callout("Nhận định tài chính", [_p(f["commentary"])], color=TEAL, bg="#EEF9F8")]
+    # Phụ lục BCTC; trang riêng để tránh cảnh báo/mẩu bảng nằm lẻ loi ở cuối trang.
     # phụ lục BCTC trích từ dữ liệu gốc
     raw = fd.get("_raw") or {}
     appendix = []
@@ -625,21 +731,39 @@ def _sec_fundamental(results, summary, fd, company):
         if not pcols:
             continue
         per = sorted(map(str, pcols))[-1]
-        sub = df[["item", per]].copy()
-        sub[per] = pd.to_numeric(sub[per], errors="coerce")
-        sub = sub.dropna().head(10)
+        keep = ['item', per] + (['unit'] if 'unit' in df.columns else [])
+        sub = df[keep].copy()
+        sub[per] = pd.to_numeric(sub[per], errors='coerce')
+        sub = sub.dropna(subset=[per]).head(12)
         if sub.empty:
             continue
         title = next((v for k, v in names.items() if k in str(key).lower()), str(key))
         rows = [[Paragraph(f"{title} - {per}", ST["cellh"]), Paragraph("Giá trị", ST["cellh"])]]
         for _, r in sub.iterrows():
-            val = r[per]
-            rows.append([_p(str(r["item"]), "cell"), Paragraph(f"{val / 1e9:,.1f}" if abs(val) >= 1e7 else f"{val:,.2f}", ST["cellr"])])
-        appendix.append(KeepTogether([Spacer(1, 6), _tbl(rows, [CONTENT_W * .78, CONTENT_W * .22])]))
+            val = float(r[per])
+            unit = str(r.get('unit') or '')
+            if unit.upper() == 'VND':
+                shown = f'{val / 1e9:,.1f} tỷ đồng'
+            elif unit.lower() in ('ratio', 'percent'):
+                shown = f'{val * 100:.2f}%' if abs(val) <= 1 else f'{val:.2f}%'
+            elif unit.lower() == 'vnd/cp':
+                shown = f'{val:,.0f} VND/cp'
+            else:
+                shown = f'{val:,.2f}'
+            rows.append([_p(str(r['item']), 'cell'), Paragraph(shown, ST['cellr'])])
+        appendix.append([Spacer(1, 6), _tbl(rows, [(CONTENT_W / 2 - 5) * .62, (CONTENT_W / 2 - 5) * .38])])
     if appendix:
-        head = Paragraph("Trích yếu báo cáo tài chính (đơn vị: tỷ đồng nếu giá trị lớn)", ST["h2"])
-        appendix[0] = KeepTogether([head, appendix[0]])
-        fl += appendix
+        head = [Paragraph("PHỤ LỤC / BCTC", ST["editor_kicker"]),
+                Paragraph("Trích yếu báo cáo tài chính", ST["editor_toc_title"]),
+                _p("Các số liệu dưới đây lấy từ chỉ tiêu trọng yếu có đơn vị và kỳ công bố được xác định.", "small")]
+        # Trình bày 2 cột như trang tài chính của báo cáo thường niên, tránh trang phụ lục lẻ.
+        fl += head
+        half = CONTENT_W / 2
+        for i in range(0, len(appendix), 2):
+            left = appendix[i]
+            right = appendix[i + 1] if i + 1 < len(appendix) else [Spacer(1, 2)]
+            fl.append(_side_by_side(left, right, half, half, gap=10))
+            fl.append(Spacer(1, 5))
     return fl
 
 
@@ -678,7 +802,7 @@ def _sec_valuation(results, fd):
     for ttl, text in (("Nhận định định giá", v.get("commentary")), ("Nhận định so sánh cùng ngành", v.get("peer_commentary") or peer.get("commentary"))):
         if text:
             fl += [Spacer(1, 6), _callout(ttl, [_p(text)], color=PURPLE, bg="#F6F3FF")]
-    fl += [Spacer(1, 4), _p("Peer Fair Value là giá trị hàm ý theo bội số tương đối của nhóm cùng ngành, không phải giá mục tiêu và không phải định giá nội tại DCF.", "small")]
+    fl += [Spacer(1, 4), _p("P/E, P/B snapshot CSV không có ngày công bố; chỉ được dùng khi giá hàm ý khớp thị trường. Peer Fair Value chỉ là giá trị tham chiếu khi mẫu đủ tin cậy, không phải giá mục tiêu.", "small")]
     return fl
 
 
@@ -730,8 +854,8 @@ def _sec_method(results, summary):
     fl = _section("Phương pháp, nguồn dữ liệu & giới hạn")
     rows = [[Paragraph("Khối", ST["cellh"]), Paragraph("Nguồn / phương pháp", ST["cellh"])],
             [_p("Giá & kỹ thuật", "cellb"), _p("DNSE OpenAPI (dự phòng vnstock Market); MA20, MA50, RSI(14), MACD(12,26,9), Volume/MA20, Volatility, Drawdown.", "cell")],
-            [_p("BCTC & cơ bản", "cellb"), _p("vnstock/KBS; ROE, ROA, biên lợi nhuận, tăng trưởng, Debt/Equity; chỉ tiêu thiếu được loại khỏi mẫu số, không gán 0.", "cell")],
-            [_p("Định giá", "cellb"), _p("P/E, P/B so với lịch sử doanh nghiệp; Peer Valuation theo trung vị P/E, P/B cùng ngành (phân loại ICB) khi đủ dữ liệu.", "cell")],
+            [_p("BCTC & cơ bản", "cellb"), _p("CSV stock.quanganh.org (BCTC FY 2020–2025, ngân hàng có ISB/BSB và chỉ số NIM/NPL/CAR/CASA/LDR); KBS tùy chọn. Dữ liệu tiền chuẩn hóa về VND; không tự điền năm thiếu; điểm tài chính bị chặn khi dữ liệu không đủ.", "cell")],
+            [_p("Định giá", "cellb"), _p("P/E, P/B snapshot CSV chỉ được sử dụng khi mức giá hàm ý (vốn hóa / cổ phiếu) khớp giá quan sát; thiếu timestamp phải cảnh báo. Peers lấy theo bảng nhóm ngành tham khảo riêng, chưa phải ICB chuẩn; chỉ công bố giá hàm ý khi chất lượng phù hợp. Dữ liệu snapshot CSV thiếu ngày xác minh.", "cell")],
             [_p("Tin tức", "cellb"), _p("Google News RSS; sentiment heuristic theo tiêu đề và độ mới.", "cell")],
             [_p("Luận điểm & rủi ro", "cellb"), _p("Sinh tự động từ kết quả phân tích của từng mã và hồ sơ nhà đầu tư; không bổ sung dữ kiện ngoài dữ liệu đã thu thập (trừ ghi chú thủ công nếu có).", "cell")],
             [_p("Investment Score", "cellb"), _p("25% Tài chính + 25% Định giá + 25% Kỹ thuật + 15% Tin tức + 10% Rủi ro/An toàn; điểm theo hồ sơ dùng trọng số điều chỉnh.", "cell")]]
@@ -745,25 +869,32 @@ def _sec_method(results, summary):
 
 # ----------------------------------------------------------------------------- tài liệu + đánh số trang
 class _Doc(BaseDocTemplate):
-    def __init__(self, buf, ticker, **kw):
+    def __init__(self, buf, ticker, cover_data=None, **kw):
         super().__init__(buf, pagesize=A4, leftMargin=18 * mm, rightMargin=18 * mm, topMargin=20 * mm, bottomMargin=17 * mm,
                          title=f"StockLens - {ticker}", author="StockLens", **kw)
         self.ticker = ticker
+        self.cover_data = cover_data
         self.addPageTemplates([PageTemplate(id="p", frames=[Frame(self.leftMargin, self.bottomMargin, self.width, self.height, id="f",
                                                                    leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)],
                                             onPage=self._decorate)])
 
     def _decorate(self, canv, doc):
         w, h = A4
+        if self.page == 1 and self.cover_data is not None:
+            _draw_cover_page(canv, *self.cover_data)
+            return
         canv.saveState()
-        canv.setFillColor(C(NAVY)); canv.setFont("SL-B", 9); canv.drawString(18 * mm, h - 11 * mm, "STOCKLENS")
-        canv.setFillColor(C(MUTED)); canv.setFont("SL", 7.5)
-        canv.drawString(18 * mm + 62, h - 11 * mm, "Investment Intelligence Platform")
-        canv.drawRightString(w - 18 * mm, h - 11 * mm, f"Báo cáo phân tích cổ phiếu {self.ticker}")
-        canv.setStrokeColor(C(LINE)); canv.setLineWidth(.6); canv.line(18 * mm, h - 13.5 * mm, w - 18 * mm, h - 13.5 * mm)
-        canv.line(18 * mm, 13 * mm, w - 18 * mm, 13 * mm)
-        canv.setFont("SL", 6.8)
-        canv.drawString(18 * mm, 9 * mm, "Nguồn: DNSE OpenAPI | vnstock/KBS | Google News RSS  -  Dự án học tập, không phải khuyến nghị đầu tư")
+        canv.setFillColor(C(NAVY));canv.rect(0,h-15*mm,w,15*mm,fill=1,stroke=0)
+        canv.setFont("SL-B",9);canv.setFillColor(colors.white)
+        canv.drawString(18*mm,h-10*mm,"STOCKLENS")
+        canv.setFont("SL",7);canv.setFillColor(C("#8FE0D9"))
+        canv.drawString(49*mm,h-10*mm,"EQUITY RESEARCH  /  " + self.ticker)
+        canv.setStrokeColor(C(TEAL));canv.setLineWidth(2)
+        canv.line(18*mm,h-16*mm,39*mm,h-16*mm)
+        canv.setStrokeColor(C(LINE));canv.setLineWidth(.6)
+        canv.line(18*mm,14*mm,w-18*mm,14*mm)
+        canv.setFillColor(C(MUTED));canv.setFont("SL",6.6)
+        canv.drawString(18*mm,9.5*mm,"STOCKLENS  ·  Research Note  ·  Dữ liệu và phương pháp tại cuối báo cáo")
         canv.restoreState()
 
     def afterFlowable(self, fl):
@@ -787,9 +918,10 @@ class _Numbered(rl_canvas.Canvas):
         total = len(self._saved)
         for st in self._saved:
             self.__dict__.update(st)
-            self.setFont("SL", 7.5)
-            self.setFillColor(C(MUTED))
-            self.drawRightString(A4[0] - 18 * mm, 9 * mm, f"Trang {self._pageNumber}/{total}")
+            if self._pageNumber > 1:
+                self.setFont("SL", 7.5)
+                self.setFillColor(C(MUTED))
+                self.drawRightString(A4[0] - 18 * mm, 9.5 * mm, f"{self._pageNumber:02d} / {total:02d}")
             super().showPage()
         super().save()
 
@@ -808,12 +940,19 @@ def generate_pdf(ticker, period_text, results, summary, sections, profile, compa
 
     toc = TableOfContents()
     toc.dotsMinLevel = 0
-    toc.levelStyles = [ParagraphStyle("toc0", parent=ST["toc0"], fontName="SL", fontSize=9.5, leading=16, leftIndent=0, firstLineIndent=0)]
+    toc.levelStyles = [ParagraphStyle("toc0", parent=ST["toc0"], fontName="SL", fontSize=10, leading=24, leftIndent=0, firstLineIndent=0)]
 
-    plan = [("overview", "Tổng quan doanh nghiệp"), ("thesis", "Luận điểm đầu tư & rủi ro cần lưu ý")]
-    plan += [(k, n) for k, n in (("technical", "Phân tích kỹ thuật"), ("fundamental", "Phân tích tài chính"), ("valuation", "Phân tích định giá"),
-                                 ("news", "Tin tức & triển vọng"), ("score", "Investment Score & hồ sơ nhà đầu tư")) if k in sections]
-    plan.append(("method", "Phương pháp, nguồn dữ liệu & giới hạn"))
+    plan = [("overview", "Tổng quan doanh nghiệp và ngành")]
+    plan += [(k, n) for k, n in (("fundamental", "Phân tích tình hình tài chính"),
+                                 ("valuation", "Định giá và doanh nghiệp so sánh"),
+                                 ("technical", "Phân tích kỹ thuật"),
+                                 ("news", "Tin tức và triển vọng")) if k in sections]
+    if "score" in sections:
+        plan.extend([("score", "Investment Score và hồ sơ nhà đầu tư"),
+                     ("thesis", "Rủi ro và kết luận đầu tư")])
+    else:
+        plan.append(("thesis", "Rủi ro và kết luận đầu tư"))
+    plan.append(("method", "Phương pháp, nguồn dữ liệu và giới hạn"))
 
     builders = {
         "overview": lambda: _sec_overview(ticker, company, results, summary, fd, profile),
@@ -833,15 +972,15 @@ def generate_pdf(ticker, period_text, results, summary, sections, profile, compa
             # đánh số mục: thay tiêu đề đầu tiên (Paragraph style 'sec') bằng "i. title"
             for fl in body:
                 if isinstance(fl, Paragraph) and fl.style.name == "sec":
-                    body[body.index(fl)] = Paragraph(escape(f"{i}. {title}"), ST["sec"])
+                    body[body.index(fl)] = Paragraph(f'<font color="{TEAL}">{i:02d}</font>  {escape(title)}', ST["sec"])
                     break
         except Exception as exc:  # không để một mục lỗi làm hỏng cả báo cáo
-            body = [Paragraph(escape(f"{i}. {title}"), ST["sec"]), _p(f"Không dựng được mục này: {exc}", "small")]
+            body = [Paragraph(f'<font color="{TEAL}">{i:02d}</font>  {escape(title)}', ST["sec"]), _p(f"Không dựng được mục này: {exc}", "small")]
         story += body
         if i < len(plan):
             story.append(PageBreak())
 
     buf = io.BytesIO()
-    doc = _Doc(buf, ticker)
+    doc = _Doc(buf, ticker, cover_data=(ticker, period_text, profile, results, summary, company, th))
     doc.multiBuild(story, canvasmaker=_Numbered)
     return buf.getvalue()

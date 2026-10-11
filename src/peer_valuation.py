@@ -24,6 +24,7 @@ Design goals
 """
 
 from __future__ import annotations
+import statistics
 
 import re
 import time
@@ -413,6 +414,8 @@ def _financial_row(symbol: str, preloaded: Optional[Dict[str, Any]] = None) -> D
                 "earnings_per_share",
                 "earning_per_share",
                 "basicEPS",
+                "trailingEps",
+                "reportedAnnualEPS",
             ],
         )
     )
@@ -437,7 +440,7 @@ def _financial_row(symbol: str, preloaded: Optional[Dict[str, Any]] = None) -> D
     # not assume history[0] is the newest period.
     history = data.get("financialHistory") or data.get("financial_history") or []
     latest = _latest_history_record(history)
-    if latest:
+    if latest and not str(data.get('source') or '').startswith('CSV'):
         if pe is None:
             pe = _positive(latest.get("pe"))
         if pb is None:
@@ -454,19 +457,19 @@ def _financial_row(symbol: str, preloaded: Optional[Dict[str, Any]] = None) -> D
     # Raw KBS ratio table fallback. These are the important fixes for the
     # current StockLens data where EPS/BVPS are visible in the PDF appendix but
     # were not exposed at the top level of financial_data.
-    if pe is None:
+    if pe is None and not str(data.get('source') or '').startswith('CSV'):
         pe = _extract_raw_ratio_metric(
             data,
             exact_ids=["pe_ratio"],
             contains_tokens=["p/e", "price to earning", "priceToEarning"],
         )
-    if pb is None:
+    if pb is None and not str(data.get('source') or '').startswith('CSV'):
         pb = _extract_raw_ratio_metric(
             data,
             exact_ids=["pb_ratio"],
             contains_tokens=["p/b", "price to book", "priceToBook"],
         )
-    if eps is None:
+    if eps is None and not str(data.get('source') or '').startswith('CSV'):
         eps = _extract_raw_ratio_metric(
             data,
             exact_ids=[
@@ -483,7 +486,7 @@ def _financial_row(symbol: str, preloaded: Optional[Dict[str, Any]] = None) -> D
                 "earnings per share",
             ],
         )
-    if bvps is None:
+    if bvps is None and not str(data.get('source') or '').startswith('CSV'):
         bvps = _extract_raw_ratio_metric(
             data,
             exact_ids=[
@@ -980,6 +983,16 @@ def analyze_peer_valuation(
         {"pe": implied_pe, "pb": implied_pb},
         {"pe": valuation_weights["pe"], "pb": valuation_weights["pb"]},
     )
+    # Không công bố giá tham chiếu chính xác khi peer ít hoặc ROE quá khác biệt.
+    target_roe = _finite(target.get('roe'))
+    peer_roes = [_finite(row.get('roe')) for row in cleaned_peers]
+    peer_roes = [r for r in peer_roes if r is not None]
+    peer_quality_blocked = (len(cleaned_peers) < 4 or
+        any(r < 0 for r in peer_roes) or
+        (target_roe is not None and peer_roes and
+         abs(target_roe - (statistics.median(peer_roes))) > 0.12))
+    if peer_quality_blocked:
+        peer_fair_value = None
 
     upside_downside = (
         peer_fair_value / current_price - 1.0
@@ -1014,6 +1027,8 @@ def analyze_peer_valuation(
         },
     )
     score = round(score, 2) if score is not None else None
+    if peer_quality_blocked:
+        score = None
     classification = _classification(score)
 
     positives: List[str] = []
@@ -1058,6 +1073,9 @@ def analyze_peer_valuation(
         peer_rows,
         cleaned_peers,
     )
+    if peer_quality_blocked:
+        peer_quality_status = 'Chưa đủ tin cậy'
+        peer_quality_warnings.append('Giá trị hàm ý bị ẩn do mẫu peer nhỏ, ROE âm hoặc chênh lệch ROE quá lớn (>12 điểm %).')
 
     comparison_parts = []
     if target_pe is not None and peer_median_pe is not None:

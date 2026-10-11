@@ -514,6 +514,12 @@ def _find_terms(
     return found
 
 
+def _normalize_search_text_for_sentiment(value: str) -> str:
+    import unicodedata
+    s = unicodedata.normalize('NFKD', str(value).casefold())
+    return ''.join(c for c in s if not unicodedata.combining(c))
+
+
 def _classify_sentiment(
     title: str,
 ) -> dict[str, Any]:
@@ -543,13 +549,19 @@ def _classify_sentiment(
         NEGATIVE_TERMS,
     )
 
-    positive_hits = len(
-        positive_terms
-    )
-
-    negative_hits = len(
-        negative_terms
-    )
+    positive_hits = len(positive_terms)
+    negative_hits = len(negative_terms)
+    # Bổ sung cụm có nghĩa tài chính rõ ràng, tránh nhầm một tiêu đề chứa
+    # "lợi nhuận tăng" nhưng đồng thời "mất vốn hóa/giảm mạnh" là tích cực.
+    adverse_phrases = ('mat von hoa', 'boc hoi', 'lao doc', 'giam manh',
+                       'sut giam', 'mat gia', 'ap luc ban', 'thung moc',
+                       'giam lien tiep', 'rủi ro', 'rui ro', 'suc ep',
+                       'nguy co roi', 'chao dao', 'giam diem')
+    normalized = _normalize_search_text_for_sentiment(title)
+    if any(term in normalized for term in adverse_phrases):
+        negative_hits += 1
+        if 'diễn biến giá/vốn hóa tiêu cực' not in negative_terms:
+            negative_terms = list(negative_terms) + ['diễn biến giá/vốn hóa tiêu cực']
 
     # =====================================================
     # MIXED
@@ -870,6 +882,31 @@ def _empty_result(
     }
 
 
+
+
+def _rss_image(entry) -> str | None:
+    """Use an article-specific image only when explicitly carried by RSS."""
+    for field in ("media_content", "media_thumbnail", "enclosures"):
+        for media in entry.get(field, []) or []:
+            url = media.get("url") or media.get("href")
+            if url and str(url).startswith(("https://", "http://")):
+                return str(url)
+    # Images embedded in the feed's summary, if available.
+    import html as _html
+    from html.parser import HTMLParser
+    class _ImgParser(HTMLParser):
+        value = None
+        def handle_starttag(self, tag, attrs):
+            if tag.lower() == "img" and not self.value:
+                attr = dict(attrs)
+                self.value = attr.get("src")
+    p = _ImgParser()
+    p.feed(_html.unescape(str(entry.get("summary", ""))[:20000]))
+    if p.value and p.value.startswith(("https://", "http://")):
+        return p.value
+    return None
+
+
 # =========================================================
 # 13. MAIN
 # =========================================================
@@ -1134,6 +1171,7 @@ def analyze_news(
         items.append(
             {
                 "title": title,
+                "image": _rss_image(entry),
 
                 "link": (
                     entry.get(

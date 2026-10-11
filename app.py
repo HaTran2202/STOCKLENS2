@@ -29,6 +29,7 @@ import streamlit as st
 from market_data import get_market_data
 from src.technical_analysis import analyze_technical
 from src.vnstock_data import get_financial_data
+from src.csv_data import reconcile_market_snapshot
 from src.fundamental_analysis import analyze_fundamental
 from src.valuation import analyze_valuation
 from src.news_analysis import analyze_news
@@ -705,7 +706,7 @@ def build_company(display_ticker, financial_data, df):
         "roe": finite(financial_data.get("returnOnEquity")),
         "dividend_yield": finite(financial_data.get("dividendYield")),
         "report_period": financial_data.get("reportPeriod"),
-        "data_sources": "DNSE OpenAPI • vnstock/KBS • Google News RSS",
+        "data_sources": "DNSE OpenAPI • " + str(financial_data.get('source') or 'BCTC chưa rõ nguồn') + " • Google News RSS",
     }
 
 
@@ -1012,6 +1013,10 @@ def render_analysis_form():
     if not run:
         return
 
+    # Invalidate the previous analysis/PDF before a new ticker or profile run.
+    st.session_state.pop('analysis', None)
+    st.session_state.pop('custom_pdf', None)
+    st.session_state.pop('custom_pdf_key', None)
     ticker_input = ticker_input.strip().upper()
     st.session_state["ticker_input"] = ticker_input
     st.session_state["start_date"] = start
@@ -1032,8 +1037,10 @@ def render_analysis_form():
             raise ValueError(f"Không có dữ liệu giá từ DNSE cho mã {ticker_input}.")
 
         display_ticker = compact_ticker(ticker_input)
-        progress.progress(18, text="Đang lấy BCTC và chỉ số tài chính từ vnstock/KBS...")
-        financial_data = load_financial(display_ticker)
+        progress.progress(18, text="Đang lấy BCTC từ CSV hoặc vnstock/KBS...")
+        financial_data = reconcile_market_snapshot(load_financial(display_ticker), float(df.iloc[-1]["Close"]))
+        if financial_data.get('qualityWarnings'):
+            st.warning('Lưu ý dữ liệu: ' + '; '.join(financial_data['qualityWarnings'][:2]))
         company = build_company(display_ticker, financial_data, df)
 
         progress.progress(35, text="Đang tính chỉ báo kỹ thuật...")
@@ -1049,6 +1056,10 @@ def render_analysis_form():
             current_price=current_price,
         )
 
+        resolved_industry = ((value.get('peer_valuation') or {}).get('industry') or '').strip()
+        if resolved_industry and company.get('sector') == 'Chưa có dữ liệu ngành':
+            company['sector'] = resolved_industry
+            company['industry'] = resolved_industry
         progress.progress(67, text="Đang tổng hợp tin tức...")
         news = analyze_news(display_ticker, company["name"])
 
@@ -1662,17 +1673,36 @@ def render_analysis_page(ticker, profile, results, summary, company, financial_d
             peer_median_pb = finite(v.get("peer_median_pb", peer.get("peer_median_pb")))
             peer_quality = v.get("peer_quality_status") or peer.get("peer_quality_status") or "Chưa đánh giá"
 
+            # Show an explicitly labelled arithmetic reference when independent
+            # peer quality gates prevent calling it a validated fair value.
+            indicative_value = finite(peer.get("indicative_peer_price"))
+            indicative_delta = finite(peer.get("indicative_upside"))
+            show_reference = peer_fair_value is None and indicative_value is not None
+            display_value = indicative_value if show_reference else peer_fair_value
+            display_delta = indicative_delta if show_reference else peer_upside
+            # Preserve the original five-card layout and ORIGINAL labels.
+            value_title = "Peer Fair Value"
+            delta_title = "Upside / Downside"
             pc = st.columns(5)
             peer_cards = [
                 ("Peer Score", "N/A" if peer_score is None else f"{peer_score:.1f}/100", peer.get("classification") or "So với peers", score_tone(peer_score)),
-                ("Peer Fair Value", fmt_price(peer_fair_value, currency), "Giá trị hàm ý tương đối", "purple"),
-                ("Upside / Downside", "N/A" if peer_upside is None else f"{peer_upside:+.1%}", "So với giá hiện tại", change_tone(peer_upside, "blue")),
+                (value_title, fmt_price(display_value, currency), "P/E tham khảo · chưa xác minh" if show_reference else "Giá trị hàm ý tương đối", "purple"),
+                (delta_title, "Chưa có thị giá" if display_delta is None else f"{display_delta:+.1%}", "Chênh lệch tham khảo · chưa xác minh" if show_reference else "So với giá hiện tại", change_tone(display_delta, "blue")),
                 ("Median P/E peers", "N/A" if peer_median_pe is None else f"{peer_median_pe:.2f}x", "Trung vị doanh nghiệp cùng ngành", "blue"),
                 ("Median P/B peers", "N/A" if peer_median_pb is None else f"{peer_median_pb:.2f}x", "Trung vị doanh nghiệp cùng ngành", "teal"),
             ]
             for col, (lab, val, sub, tone) in zip(pc, peer_cards):
                 col.markdown(metric_card(lab, val, sub, tone), unsafe_allow_html=True)
 
+            illustrative = finite(peer.get("indicative_peer_price"))
+            illustrative_upside = finite(peer.get("indicative_upside"))
+            if show_reference:
+                st.info(
+                    "**Kịch bản P/E tham khảo (chưa xác minh đồng kỳ):** "
+                    + fmt_price(illustrative, currency)
+                    + (f" · Chênh lệch so với thị giá: {illustrative_upside:+.1%}" if illustrative_upside is not None else "")
+                    + ". Không phải Peer Fair Value, giá mục tiêu hay khuyến nghị đầu tư."
+                )
             weights = peer.get("valuation_weights", {}) or {}
             weight_label = weights.get("label") or "Trọng số peer theo quy tắc StockLens"
             icb_level = peer.get("industry_icb_level")
@@ -1696,8 +1726,8 @@ def render_analysis_page(ticker, profile, results, summary, company, financial_d
             # Các đầu vào quy đổi multiple thành giá hàm ý
             p2 = st.columns(4)
             peer_detail_cards = [
-                ("EPS", fmt_price(peer.get("eps"), currency), "Thu nhập trên mỗi cổ phiếu", "green"),
-                ("BVPS", fmt_price(peer.get("bvps"), currency), "Giá trị sổ sách/cổ phiếu", "teal"),
+                ("EPS", fmt_price(peer.get("eps"), currency), "EPS có kỳ: " + str(peer.get("eps_basis") or "chưa có nguồn"), "green"),
+                ("BVPS", fmt_price(peer.get("bvps"), currency), "BVPS chưa xác minh thì để N/A", "teal"),
                 ("Giá hàm ý theo P/E", fmt_price(v.get("peer_implied_price_pe", peer.get("implied_price_pe")), currency), "EPS × Median P/E peers", "blue"),
                 ("Giá hàm ý theo P/B", fmt_price(v.get("peer_implied_price_pb", peer.get("implied_price_pb")), currency), "BVPS × Median P/B peers", "purple"),
             ]
@@ -1731,7 +1761,7 @@ def render_analysis_page(ticker, profile, results, summary, company, financial_d
                     "Doanh nghiệp": row.get("name") or sym,
                     "P/E": "N/A" if pe_peer is None else f"{pe_peer:.2f}x",
                     "P/B": "N/A" if pb_peer is None else f"{pb_peer:.2f}x",
-                    "ROE": "N/A" if roe is None else f"{roe:.2f}%",
+                    "ROE": "N/A" if roe is None else f"{roe * 100:.2f}%",
                     "Quality": q.get("status", "OK"),
                     "Cảnh báo": q.get("flags", "-"),
                 })

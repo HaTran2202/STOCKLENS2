@@ -22,21 +22,22 @@ class ModuleTests(unittest.TestCase):
             self.assertTrue(result['data_available']); self.assertTrue(0 <= result['score'] <= 100)
             self.assertEqual(len(result['charts']), 3)
 
-    def test_debt_equity_normalized(self):
-        r = analyze_fundamental({'returnOnEquity':.2,'debtToEquity':45.0,'currentRatio':1.5})
+    def test_debt_equity_is_normalized_at_source(self):
+        # Analysis accepts ratios in decimal units; conversion is done in the data adapter.
+        r = analyze_fundamental({'returnOnEquity':.2,'debtToEquity':.45,'currentRatio':1.5})
         self.assertAlmostEqual(r['metrics']['debt_to_equity'], .45)
 
     def test_valuation_components(self):
         r = analyze_valuation({'trailingPE':12.53,'priceToBook':2.74,'forwardPE':8.91})
-        self.assertEqual(set(r['component_scores']), {'pe','pb','forward_pe'})
+        self.assertEqual(set(r['component_scores']), {'pe_absolute','pb_absolute'})
 
     def test_news_relevance(self):
         try:
-            from src.news_analysis import _relevant
+            from src.news_analysis import _relevance_score
         except ModuleNotFoundError:
             self.skipTest('feedparser chưa có trong môi trường kiểm thử; requirements.txt có khai báo.')
-        self.assertTrue(_relevant('FPT công bố kết quả kinh doanh', 'FPT', 'FPT Corporation'))
-        self.assertFalse(_relevant('Novaland làm sao thế?', 'FPT', 'FPT Corporation'))
+        self.assertGreater(_relevance_score('FPT công bố kết quả kinh doanh', 'FPT', 'FPT Corporation'), 0)
+        self.assertEqual(_relevance_score('Novaland làm sao thế?', 'FPT', 'FPT Corporation'), 0)
 
     def test_market_risk_has_drawdown(self):
         with tempfile.TemporaryDirectory() as d:

@@ -273,7 +273,7 @@ def _analyze_corporate(info: dict, metrics: dict[str, float | None]) -> dict[str
         "total_components": len(component_weights),
         "method_note": (
             "Doanh nghiệp thông thường: ROE 20%, ROA 15%, biên lợi nhuận ròng 20%, "
-            "tăng trưởng doanh thu 15%, Debt/Equity 15% và Current Ratio 15%. "
+            "tăng trưởng doanh thu 15%, Nợ phải trả/VCSH 15% và Current Ratio 15%. "
             "Chỉ tiêu thiếu dữ liệu được loại khỏi mẫu số thay vì chấm 0."
         ),
     }
@@ -284,108 +284,50 @@ def _analyze_corporate(info: dict, metrics: dict[str, float | None]) -> dict[str
 # =========================================================
 
 def _analyze_bank(info: dict, metrics: dict[str, float | None]) -> dict[str, Any]:
-    # Không dùng D/E, Current Ratio và Net Margin của doanh nghiệp thường cho ngân hàng.
-    # Chỉ sử dụng các biến có thể lấy/derive minh bạch từ KBS hiện tại.
-    component_weights = {
-        "roe": 0.25,
-        "roa": 0.20,
-        "net_income_growth": 0.20,
-        "asset_growth": 0.15,
-        "equity_to_assets": 0.10,
-        "operating_income_growth": 0.10,
+    """Bank-specific heuristic. Every ratio is directly read from CSV/provider.
+
+    NIM, CAR, CASA, NPL and LDR are NOT inferred from non-bank accounts.
+    LLR is unavailable in this export; do not assign it a score.
+    """
+    weights = {'roe': .15, 'roa': .10, 'net_interest_margin': .15,
+               'npl_ratio': .20, 'car': .15, 'casa_ratio': .10,
+               'ldr': .10, 'loans_growth': .05}
+    scores={}; positives=[]; risks=[]; observations=[]
+    values = {
+        'roe': metrics.get('roe'), 'roa': metrics.get('roa'),
+        'net_interest_margin': metrics.get('net_interest_margin'),
+        'npl_ratio': metrics.get('npl_ratio'), 'car': metrics.get('car'),
+        'casa_ratio': metrics.get('casa_ratio'), 'ldr': metrics.get('ldr'),
+        'loans_growth': metrics.get('loans_growth'),
     }
-
-    component_scores: dict[str, int] = {}
-    positives: list[str] = []
-    risks: list[str] = []
-    observations: list[str] = []
-
-    roe = metrics["roe"]
-    s = _score_higher(roe, 0.15, 0.10)
-    if s is not None:
-        component_scores["roe"] = s
-        if s == 100:
-            positives.append(f"ROE {_pct_text(roe)} ở mức mạnh đối với ngân hàng.")
-        elif s == 60:
-            observations.append(f"ROE {_pct_text(roe)} ở mức chấp nhận được đối với ngân hàng.")
-        else:
-            risks.append(f"ROE {_pct_text(roe)} còn thấp so với ngưỡng StockLens dành cho ngân hàng.")
-
-    roa = metrics["roa"]
-    s = _score_higher(roa, 0.015, 0.008)
-    if s is not None:
-        component_scores["roa"] = s
-        if s == 100:
-            positives.append(f"ROA {_pct_text(roa)} cho thấy hiệu quả sử dụng tài sản tốt trong mô hình ngân hàng.")
-        elif s == 60:
-            observations.append(f"ROA {_pct_text(roa)} ở mức chấp nhận được đối với ngân hàng.")
-        else:
-            risks.append(f"ROA {_pct_text(roa)} còn thấp.")
-
-    growth = metrics["net_income_growth"]
-    s = _score_higher(growth, 0.15, 0.00)
-    if s is not None:
-        component_scores["net_income_growth"] = s
-        if s == 100:
-            positives.append(f"LNST tăng {_pct_text(growth)} so với năm trước.")
-        elif s == 60:
-            observations.append(f"LNST tăng {_pct_text(growth)}, nhưng tốc độ chưa cao.")
-        else:
-            risks.append(f"LNST giảm {_pct_text(abs(growth))} so với năm trước.")
-
-    asset_growth = metrics["asset_growth"]
-    s = _score_higher(asset_growth, 0.12, 0.05)
-    if s is not None:
-        component_scores["asset_growth"] = s
-        if s == 100:
-            positives.append(f"Tổng tài sản tăng {_pct_text(asset_growth)}, cho thấy quy mô hoạt động mở rộng mạnh.")
-        elif s == 60:
-            observations.append(f"Tổng tài sản tăng {_pct_text(asset_growth)} ở mức vừa phải.")
-        else:
-            risks.append(f"Tăng trưởng tổng tài sản {_pct_text(asset_growth)} còn yếu hoặc âm.")
-
-    equity_to_assets = metrics["equity_to_assets"]
-    s = _score_higher(equity_to_assets, 0.08, 0.05)
-    if s is not None:
-        component_scores["equity_to_assets"] = s
-        if s == 100:
-            positives.append(f"VCSH/Tổng tài sản {_pct_text(equity_to_assets)} cho thấy lớp vốn kế toán tương đối tốt.")
-        elif s == 60:
-            observations.append(f"VCSH/Tổng tài sản {_pct_text(equity_to_assets)} ở mức trung bình.")
-        else:
-            risks.append(f"VCSH/Tổng tài sản {_pct_text(equity_to_assets)} tương đối thấp.")
-
-    income_growth = metrics["operating_income_growth"]
-    s = _score_higher(income_growth, 0.10, 0.00)
-    if s is not None:
-        component_scores["operating_income_growth"] = s
-        if s == 100:
-            positives.append(f"Thu nhập hoạt động tăng {_pct_text(income_growth)} so với năm trước.")
-        elif s == 60:
-            observations.append(f"Thu nhập hoạt động tăng {_pct_text(income_growth)} nhưng chưa mạnh.")
-        else:
-            risks.append(f"Thu nhập hoạt động giảm {_pct_text(abs(income_growth))} so với năm trước.")
-
-    score, available_weight = _weighted_score(component_scores, component_weights)
-
-    observations.append(
-        "StockLens không dùng Debt/Equity, Current Ratio và Net Profit Margin theo thang doanh nghiệp thông thường cho ngân hàng."
-    )
-
+    configs={
+        'roe': ('higher',.16,.10), 'roa':('higher',.015,.008),
+        'net_interest_margin':('higher',.04,.025),
+        'npl_ratio':('lower',.015,.03), 'car':('higher',.11,.085),
+        'casa_ratio':('higher',.35,.20),'loans_growth':('higher',.14,.06),
+    }
+    for key,(direction,strong,acceptable) in configs.items():
+        v=values.get(key)
+        score=(_score_higher(v,strong,acceptable) if direction=='higher'
+               else _score_lower(v,strong,acceptable))
+        if score is not None: scores[key]=score
+    ldr=values['ldr']
+    if ldr is not None and ldr>=0:
+        scores['ldr']=100 if .70<=ldr<=.95 else 60 if .60<=ldr<=1.10 else 20
+    score, available_weight=_weighted_score(scores,weights)
+    for key, value in values.items():
+        if value is None: observations.append(f'Không có dữ liệu {key}; không tự tính hoặc gán 0.')
+    if info.get('llrRatio') is None:
+        observations.append('LLR không có trong 5 CSV, không suy đoán từ NPL hoặc CAR.')
+    observations.append('Ngưỡng chấm là heuristic phục vụ nghiên cứu, không đồng nhất với chuẩn giám sát NHNN; CAR/LDR có nhiều cách xác định.')
     return {
-        "component_weights": component_weights,
-        "component_scores": component_scores,
-        "positives": positives,
-        "risks": risks,
-        "observations": observations,
-        "score": score,
-        "available_weight": available_weight,
-        "total_components": len(component_weights),
-        "method_note": (
-            "Ngân hàng: ROE 25%, ROA 20%, tăng trưởng LNST 20%, tăng trưởng tổng tài sản 15%, "
-            "VCSH/Tổng tài sản 10% và tăng trưởng thu nhập hoạt động 10%. Chỉ tiêu thiếu dữ liệu "
-            "được loại khỏi mẫu số. VCSH/Tổng tài sản là tỷ lệ vốn kế toán, không phải CAR."
-        ),
+        'component_weights':weights, 'component_scores':scores,
+        'positives':positives,'risks':risks,'observations':observations,
+        'score':score,'available_weight':available_weight,
+        'total_components':len(weights),
+        'method_note':('Ngân hàng: ROE 15%, ROA 10%, NIM 15%, NPL 20%, CAR 15%, '
+                       'CASA 10%, LDR 10%, tăng trưởng tín dụng 5%; LLR hiển thị N/A nếu thiếu. '
+                       'Không dùng D/E, current ratio hoặc biên lãi gộp của doanh nghiệp thường.')
     }
 
 
@@ -421,6 +363,13 @@ def analyze_fundamental(info: dict) -> dict[str, Any]:
         "equity_growth": _history_growth(info, "equity"),
         "operating_income_growth": _history_growth(info, "revenue"),
         "equity_to_assets": _safe_divide(total_equity, total_assets),
+        "net_interest_margin": _num(info.get("netInterestMargin")),
+        "npl_ratio": _num(info.get("nplRatio")),
+        "car": _num(info.get("capitalAdequacyRatio")),
+        "casa_ratio": _num(info.get("casaRatio")),
+        "ldr": _num(info.get("loanToDepositRatio")),
+        "loans_growth": _num(info.get("loansGrowth")),
+        "llr_ratio": _num(info.get("llrRatio")),
     }
 
     if business_type == "bank":
@@ -435,6 +384,14 @@ def analyze_fundamental(info: dict) -> dict[str, Any]:
     total_components = result["total_components"]
     coverage = len(component_scores)
     coverage_ratio = coverage / total_components if total_components else 0
+    quality_warnings = list(info.get('qualityWarnings') or [])
+    essential_ok = bool(info.get('criticalDataReady', True))
+    if business_type != 'bank':
+        essential_ok = essential_ok and all(_num(info.get(k)) is not None for k in
+            ('totalRevenue', 'netIncomeToCommon', 'totalAssets', 'totalEquity'))
+    if available_weight < .80 or not essential_ok:
+        quality_warnings.append('Thiếu dữ liệu trọng yếu hoặc độ bao phủ dưới 80%; không xếp hạng tài chính.')
+        score = None
     classification = _classification(score)
 
     if score is None:
@@ -479,6 +436,8 @@ def analyze_fundamental(info: dict) -> dict[str, Any]:
         "sector": info.get("sector"),
         "report_period": info.get("reportPeriod"),
         "financial_history": history,
-        "source": "vnstock - dữ liệu tài chính KBS",
+        "source": info.get('source') or 'vnstock/KBS',
+        "quality_warnings": quality_warnings,
+        "confidence": 'Đủ điều kiện' if score is not None else 'Chưa đủ dữ liệu', 
         "method_note": result["method_note"],
     }

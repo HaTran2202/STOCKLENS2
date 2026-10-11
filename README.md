@@ -1,3 +1,5 @@
+> **Bản V4 – Editorial PDF:** Thiết kế bìa, mục lục, bảng biểu và phân cấp nội dung mới. Xem `HUONG_DAN_V4_EDITORIAL.md`. Luồng phân tích bên dưới kế thừa bản V3; chỉ nâng cấp bộ sinh PDF.
+
 ﻿# StockLens
 
 StockLens là ứng dụng học tập và nghiên cứu cổ phiếu Việt Nam. Ứng dụng lấy dữ liệu thị trường và báo cáo tài chính, phân tích kỹ thuật, tài chính, định giá, tin tức và rủi ro; sau đó hiển thị dashboard và có thể tạo báo cáo PDF.
@@ -199,3 +201,15 @@ Các thư viện ReportLab, Matplotlib, svglib và Pillow đã có trong require
 - Giá trị peer là tham chiếu tương đối, không phải giá mục tiêu chính thức hay định giá DCF.
 - Chất lượng kết quả phụ thuộc nguồn, thời điểm và mức độ đầy đủ của dữ liệu.
 - Dữ liệu hoặc ngành đặc thù có thể cần người dùng kiểm tra thêm trước khi sử dụng.
+
+
+## STOCKLENS2 sửa dữ liệu (bản CSV)
+
+- **BCTC mặc định:** CSV đã kèm theo dưới `data/financials-market_2020-2026/`.
+- **Giá giao dịch:** DNSE, yêu cầu khóa API trong `.env` (không commit).
+- **Tin tức:** Google News RSS; điểm cảm xúc chỉ theo tiêu đề, có sai số.
+- **KBS:** Chỉ cần nếu bật `STOCKLENS_FINANCIAL_SOURCE=vnstock` hoặc chủ động cấu hình `auto` cho mã thiếu CSV.
+- **Lưu ý:** CSV đang dừng ở báo cáo năm 2025; nếu cần kỳ 2026, hãy cập nhật dữ liệu có thể kiểm chứng.
+- **CSV license:** Kiểm tra điều khoản sử dụng của bên cung cấp trước khi tái phân phối trên GitHub công khai.
+
+Xem `HUONG_DAN_SUA_TOAN_BO.md` để cài đặt và chạy kiểm thử.

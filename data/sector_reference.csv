@@ -1,0 +1,46 @@
+ticker,sector,industry,exchange,group,notes
+FPT,Công nghệ thông tin,Dịch vụ CNTT và phần mềm,HOSE,information_technology,Tập đoàn đa lĩnh vực; peer thuần CNTT có tính tương đồng hạn chế
+CMG,Công nghệ thông tin,Dịch vụ CNTT và phần mềm,HOSE,information_technology,
+ELC,Công nghệ thông tin,Giải pháp công nghệ,HOSE,information_technology,
+ITD,Công nghệ thông tin,Giải pháp công nghệ,HOSE,information_technology,
+CMT,Công nghệ thông tin,Công nghệ thông tin,HOSE,information_technology,
+ICT,Công nghệ thông tin,Phân phối thiết bị CNTT,HOSE,information_technology,Khác biệt mô hình với FPT
+VCB,Tài chính,Ngân hàng,HOSE,bank,
+MBB,Tài chính,Ngân hàng,HOSE,bank,
+BID,Tài chính,Ngân hàng,HOSE,bank,
+CTG,Tài chính,Ngân hàng,HOSE,bank,
+TCB,Tài chính,Ngân hàng,HOSE,bank,
+ACB,Tài chính,Ngân hàng,HOSE,bank,
+VPB,Tài chính,Ngân hàng,HOSE,bank,
+HDB,Tài chính,Ngân hàng,HOSE,bank,
+STB,Tài chính,Ngân hàng,HOSE,bank,
+SHB,Tài chính,Ngân hàng,HNX,bank,
+TPB,Tài chính,Ngân hàng,HOSE,bank,
+VIB,Tài chính,Ngân hàng,HOSE,bank,
+OCB,Tài chính,Ngân hàng,HOSE,bank,
+LPB,Tài chính,Ngân hàng,HOSE,bank,
+EIB,Tài chính,Ngân hàng,HOSE,bank,
+MSB,Tài chính,Ngân hàng,HOSE,bank,
+HPG,Nguyên vật liệu,Sản xuất thép,HOSE,steel,Sản phẩm và chuỗi giá trị khác các doanh nghiệp tôn mạ
+HSG,Nguyên vật liệu,Tôn mạ và sản phẩm thép,HOSE,steel,
+NKG,Nguyên vật liệu,Tôn mạ và sản phẩm thép,HOSE,steel,
+SMC,Nguyên vật liệu,Thương mại thép,HOSE,steel,Khác mô hình kinh doanh
+TLH,Nguyên vật liệu,Thương mại thép,HOSE,steel,Khác mô hình kinh doanh
+GVR,Nguyên vật liệu,Cao su và khu công nghiệp,HOSE,rubber,Tập đoàn đa lĩnh vực; không so sánh đồng nhất với DN khai thác thuần cao su
+PHR,Nguyên vật liệu,Cao su thiên nhiên,HOSE,rubber,
+DPR,Nguyên vật liệu,Cao su thiên nhiên,HOSE,rubber,
+TRC,Nguyên vật liệu,Cao su thiên nhiên,HOSE,rubber,
+DRI,Nguyên vật liệu,Cao su thiên nhiên,UPCOM,rubber,
+BRR,Nguyên vật liệu,Cao su thiên nhiên,UPCOM,rubber,
+MWG,Hàng tiêu dùng,Bán lẻ,HOSE,retail,
+FRT,Hàng tiêu dùng,Bán lẻ,HOSE,retail,
+DGW,Hàng tiêu dùng,Phân phối sản phẩm công nghệ,HOSE,retail,Khác mô hình kinh doanh
+PET,Hàng tiêu dùng,Phân phối sản phẩm công nghệ,HOSE,retail,Khác mô hình kinh doanh
+VNM,Hàng tiêu dùng,Sữa và sản phẩm từ sữa,HOSE,dairy,
+MCM,Hàng tiêu dùng,Sữa và sản phẩm từ sữa,UPCOM,dairy,
+IDP,Hàng tiêu dùng,Sữa và sản phẩm từ sữa,UPCOM,dairy,
+QNS,Hàng tiêu dùng,Thực phẩm và đồ uống,UPCOM,dairy,Khác sản phẩm cốt lõi
+SSI,Tài chính,Dịch vụ chứng khoán,HOSE,securities,
+HCM,Tài chính,Dịch vụ chứng khoán,HOSE,securities,
+VCI,Tài chính,Dịch vụ chứng khoán,HOSE,securities,
+VND,Tài chính,Dịch vụ chứng khoán,HOSE,securities,
