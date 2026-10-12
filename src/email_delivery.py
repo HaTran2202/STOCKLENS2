@@ -47,22 +47,35 @@ def _truthy(value, default=False):
     return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def _setting(name: str, default: str = "") -> str:
+    """Read a setting from environment/.env, then fall back to Streamlit Secrets."""
+    value = os.getenv(name)
+    if value is not None and value.strip():
+        return value.strip()
+    try:
+        import streamlit as st
+        value = st.secrets.get(name, default)
+    except Exception:
+        value = default
+    return str(value).strip() if value is not None else default
+
+
 def smtp_config() -> dict:
     """Đọc cấu hình SMTP từ .env (đọc lại mỗi lần gọi)."""
     if load_dotenv is not None:
         load_dotenv(ROOT / ".env", override=True)
-    username = os.getenv("STOCKLENS_SMTP_USERNAME", "").strip()
-    password = os.getenv("STOCKLENS_SMTP_PASSWORD", "").replace(" ", "").strip()
-    sender = os.getenv("STOCKLENS_SMTP_FROM", "").strip() or username
-    host = os.getenv("STOCKLENS_SMTP_HOST", "").strip()
-    port_text = os.getenv("STOCKLENS_SMTP_PORT", "").strip()
+    username = _setting("STOCKLENS_SMTP_USERNAME")
+    password = _setting("STOCKLENS_SMTP_PASSWORD").replace(" ", "").strip()
+    sender = _setting("STOCKLENS_SMTP_FROM") or username
+    host = _setting("STOCKLENS_SMTP_HOST")
+    port_text = _setting("STOCKLENS_SMTP_PORT")
     domain = (parseaddr(sender or username)[1].split("@")[-1] or "").lower()
     guessed = PROVIDERS.get(domain)
     if not host and guessed:
         host = guessed[0]
     port = int(port_text) if port_text.isdigit() else (guessed[1] if guessed and not port_text else 587)
-    use_ssl = _truthy(os.getenv("STOCKLENS_SMTP_SSL"), default=False) or port == 465
-    use_tls = _truthy(os.getenv("STOCKLENS_SMTP_STARTTLS"), default=True) and not use_ssl
+    use_ssl = _truthy(_setting("STOCKLENS_SMTP_SSL"), default=False) or port == 465
+    use_tls = _truthy(_setting("STOCKLENS_SMTP_STARTTLS"), default=True) and not use_ssl
     return {"host": host, "port": port, "username": username, "password": password, "sender": sender,
             "ssl": use_ssl, "starttls": use_tls}
 
