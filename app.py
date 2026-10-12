@@ -36,7 +36,8 @@ from src.news_analysis import analyze_news
 from src.scoring import market_risk, score_all
 from src.report import generate_pdf
 from src.watchlist import get_recipient, list_watchlist, remove_entry, save_entry
-from src.email_delivery import send_report_email
+from src.email_delivery import send_report_email, send_test_email, smtp_status
+from src.charts import render_price_workbench
 from src.branding import logo_data_uri
 from src.thesis import build_thesis, recommendation as build_recommendation
 
@@ -1293,8 +1294,9 @@ def render_overview_page(a, ticker, start, end, profile, df, results, summary, c
         chart_col, score_col = st.columns([2.3, 1], gap="small")
         with chart_col:
             st.markdown('<div class="sl-panel-title" style="margin-top:12px">Diễn biến giá cổ phiếu</div>', unsafe_allow_html=True)
-            st.plotly_chart(price_chart(df, currency), use_container_width=True, config={"displayModeBar": False})
-            st.markdown('<div class="sl-chart-caption"><b>Biểu đồ 1.</b> Diễn biến giá đóng cửa và khối lượng giao dịch theo thời gian</div>', unsafe_allow_html=True)
+            render_price_workbench(df, currency, key="ov", compact=True, default_range="1Y",
+                                   default_overlays=("MA20", "MA50"), default_panels=("Khối lượng",))
+            st.markdown('<div class="sl-chart-caption"><b>Biểu đồ 1.</b> Biểu đồ giá tương tác: chọn loại nến/đường, khoảng thời gian, đường MA/Bollinger và khung chỉ báo</div>', unsafe_allow_html=True)
         with score_col:
             st.markdown('<div class="sl-panel-title" style="margin-top:12px">Investment Score</div>', unsafe_allow_html=True)
             st.plotly_chart(score_donut(summary.get("score")), use_container_width=True, config={"displayModeBar": False})
@@ -1428,15 +1430,9 @@ def render_analysis_page(ticker, profile, results, summary, company, financial_d
             ]
             for col, (lab, val, sub, tone) in zip(mc, metrics):
                 col.markdown(metric_card(lab, val, sub, tone), unsafe_allow_html=True)
-            st.plotly_chart(technical_plot(t["data"]), use_container_width=True, config={"displayModeBar": False})
-            st.markdown('<div class="sl-chart-caption"><b>Biểu đồ 2.</b> Giá đóng cửa cùng đường trung bình động MA20 và MA50</div>', unsafe_allow_html=True)
-            c1, c2 = st.columns(2)
-            with c1:
-                st.plotly_chart(rsi_plot(t["data"]), use_container_width=True, config={"displayModeBar": False})
-                st.markdown('<div class="sl-chart-caption"><b>Biểu đồ 3.</b> Chỉ số sức mạnh tương đối RSI(14)</div>', unsafe_allow_html=True)
-            with c2:
-                st.plotly_chart(macd_plot(t["data"]), use_container_width=True, config={"displayModeBar": False})
-                st.markdown('<div class="sl-chart-caption"><b>Biểu đồ 4.</b> MACD, Signal và Histogram</div>', unsafe_allow_html=True)
+            render_price_workbench(t["data"], currency, key="tech", default_range="1Y",
+                                   default_overlays=("MA20", "MA50"), default_panels=("Khối lượng", "RSI", "MACD"))
+            st.markdown('<div class="sl-chart-caption"><b>Biểu đồ 2.</b> Giá cùng MA, Bollinger và các khung khối lượng, RSI(14), MACD(12,26,9), Stochastic</div>', unsafe_allow_html=True)
             signal_rows = []
             for key, sig in t.get("signals", {}).items():
                 signal_rows.append({"Chỉ báo": key, "Tín hiệu": sig.get("signal"), "Điểm": sig.get("score")})
@@ -1835,6 +1831,49 @@ def render_analysis_page(ticker, profile, results, summary, company, financial_d
         st.caption(n.get("source", ""))
 
 
+def render_email_sender(ticker, company, end, pdf_bytes):
+    """Gửi PDF đang hiển thị tới một email bất kỳ (không cần mã nằm trong danh mục)."""
+    result = st.session_state.get("email_send_result")
+    with st.expander("✉  Gửi báo cáo này qua email", expanded=bool(result and result.get("ticker") == ticker)):
+        status = smtp_status()
+        if not status["configured"]:
+            st.warning(
+                "Chưa cấu hình email gửi nên chưa thể gửi PDF. Thiếu: " + "; ".join(status["missing"]) +
+                ". Mở file .env (cùng thư mục app.py) và thêm STOCKLENS_SMTP_USERNAME, STOCKLENS_SMTP_PASSWORD "
+                "(xem .env.example); vào trang Danh mục để xem hướng dẫn chi tiết và gửi thư thử."
+            )
+        try:
+            saved = get_recipient(ticker) or ""
+        except Exception:
+            saved = ""
+        c1, c2 = st.columns([3, 1], gap="small")
+        with c1:
+            to_addr = st.text_input("Email nhận báo cáo", value=saved, placeholder="ten@gmail.com", key=f"email_to_{ticker}")
+        with c2:
+            st.write("")
+            send_now = st.button("Gửi PDF", type="primary", use_container_width=True, key=f"email_send_{ticker}",
+                                 disabled=not pdf_bytes)
+        remember = st.checkbox("Lưu mã này vào Danh mục để tự động gửi mỗi lần phân tích", value=False, key=f"email_remember_{ticker}")
+        if send_now:
+            try:
+                send_report_email(recipient=to_addr, ticker=ticker, company_name=company.get("name", ticker),
+                                  pdf_bytes=pdf_bytes, filename=f"StockLens_{ticker}_{end}.pdf")
+                msg = f"Đã gửi PDF tới {to_addr}. Nếu chưa thấy, hãy kiểm tra mục Spam/Quảng cáo."
+                if remember:
+                    try:
+                        save_entry(ticker, to_addr)
+                        msg += f" Đã lưu {ticker} vào Danh mục."
+                    except (ValueError, RuntimeError) as exc:
+                        msg += f" (Không lưu được vào Danh mục: {exc})"
+                st.session_state["email_send_result"] = {"ok": True, "text": msg, "ticker": ticker}
+            except Exception as exc:
+                st.session_state["email_send_result"] = {"ok": False, "text": str(exc), "ticker": ticker}
+            st.rerun()
+        result = st.session_state.get("email_send_result")
+        if result and result.get("ticker") == ticker:
+            (st.success if result["ok"] else st.error)(result["text"])
+
+
 def render_report_page(a, ticker, start, end, profile, results, summary, company, financial_data):
     render_company_strip(ticker, company, df=a.get("df"), results=results, summary=summary)
 
@@ -1860,6 +1899,7 @@ def render_report_page(a, ticker, start, end, profile, results, summary, company
             )
             st.markdown('<div class="sl-report-download-note">Tạo báo cáo với dữ liệu mới nhất</div>', unsafe_allow_html=True)
 
+    render_email_sender(ticker, company, end, pdf_bytes)
     st.markdown('<div style="height:7px"></div>', unsafe_allow_html=True)
     nav_col, preview_col = st.columns([0.90, 3.70], gap="medium")
 
@@ -1915,7 +1955,33 @@ def render_report_page(a, ticker, start, end, profile, results, summary, company
 
 def render_watchlist_page():
     st.markdown('<div class="sl-section-title">Danh mục gửi báo cáo tự động</div>', unsafe_allow_html=True)
-    st.caption("Khi phân tích thành công mã trong danh mục, StockLens sẽ gửi PDF đến email đã gán. Cấu hình SMTP trong .env để bật gửi.")
+    st.caption("Khi phân tích thành công một mã CÓ trong danh mục, StockLens tự gửi PDF đến email đã gán. Mã không có trong danh mục sẽ không tự gửi (vẫn có thể gửi tay ở trang Báo cáo đầu tư).")
+    status = smtp_status()
+    if status["configured"]:
+        st.success(f"Email gửi đã được cấu hình: {status['sender']} qua {status['host']}:{status['port']}.")
+    else:
+        st.error("Chưa cấu hình email gửi, nên PDF sẽ KHÔNG được gửi. Thiếu: " + "; ".join(status["missing"]))
+        with st.expander("Cách cấu hình trong 1 phút", expanded=True):
+            st.markdown(
+                "Mở file `.env` (cùng thư mục với `app.py`) và thêm 2 dòng (Gmail/Outlook/Yahoo tự nhận máy chủ):\n"
+                "```\nSTOCKLENS_SMTP_USERNAME=ten.cua.ban@gmail.com\nSTOCKLENS_SMTP_PASSWORD=mat-khau-ung-dung\n```\n"
+                "**Gmail:** bật Xác minh 2 bước, tạo *Mật khẩu ứng dụng* tại myaccount.google.com/apppasswords rồi dán 16 ký tự vào "
+                "`STOCKLENS_SMTP_PASSWORD` (mật khẩu đăng nhập thường sẽ bị từ chối). File `.env` được đọc lại mỗi lần gửi, "
+                "không cần khởi động lại ứng dụng. Xem thêm `.env.example`."
+            )
+    with st.expander("Gửi thư thử để kiểm tra cấu hình"):
+        t1, t2 = st.columns([3, 1], gap="small")
+        with t1:
+            test_to = st.text_input("Gửi thư thử tới", placeholder="ten@gmail.com", key="smtp_test_to")
+        with t2:
+            st.write("")
+            test_go = st.button("Gửi thư thử", use_container_width=True, key="smtp_test_go")
+        if test_go:
+            try:
+                send_test_email(test_to)
+                st.success(f"Đã gửi thư thử tới {test_to}. Kiểm tra hộp thư (và Spam).")
+            except Exception as exc:
+                st.error(str(exc))
     with st.form("watchlist_entry_form", clear_on_submit=True):
         c1, c2, c3 = st.columns([1.1, 2.4, 1])
         with c1:
