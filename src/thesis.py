@@ -201,17 +201,22 @@ def _p_valuation(ticker, results, hist, profile):
     v = (results.get("valuation") or {})
     pe, pb = _f(v.get("pe")), _f(v.get("pb"))
     mpe, mpb = _f(v.get("historical_pe_median")), _f(v.get("historical_pb_median"))
+    fallback_used = bool(v.get("valuation_fallback_used"))
+    pe_label = "P/E tham chiếu từ EPS năm" if fallback_used else "P/E hiện tại"
+    pb_label = "P/B tham chiếu từ BCTC năm" if fallback_used else "P/B"
     if pe is None and pb is None:
         return None
     parts = []
     if pe is not None and mpe:
         d = pe / mpe - 1
-        parts.append(f"P/E hiện tại {_x(pe)} {'thấp hơn' if d < 0 else 'cao hơn'} trung vị lịch sử {_x(mpe)} khoảng {abs(d) * 100:.1f}%.")
+        parts.append(f"{pe_label} {_x(pe)} {'thấp hơn' if d < 0 else 'cao hơn'} trung vị lịch sử {_x(mpe)} khoảng {abs(d) * 100:.1f}%.")
     elif pe is not None:
-        parts.append(f"P/E hiện tại là {_x(pe)}.")
+        parts.append(f"{pe_label} là {_x(pe)}.")
     if pb is not None and mpb:
         d = pb / mpb - 1
-        parts.append(f"P/B {_x(pb)} {'thấp hơn' if d < 0 else 'cao hơn'} trung vị lịch sử {_x(mpb)} khoảng {abs(d) * 100:.1f}%.")
+        parts.append(f"{pb_label} {_x(pb)} {'thấp hơn' if d < 0 else 'cao hơn'} trung vị lịch sử {_x(mpb)} khoảng {abs(d) * 100:.1f}%.")
+    elif pb is not None:
+        parts.append(f"{pb_label} là {_x(pb)}.")
     ref = _f(v.get("peer_fair_value"))
     up = _f(v.get("peer_upside_downside"))
     if up is not None and abs(up) > 3:
@@ -221,7 +226,7 @@ def _p_valuation(ticker, results, hist, profile):
     if profile == "Tăng trưởng" and pe and len(hist) >= 2:
         g = _growth(hist[-1].get("net_profit"), hist[-2].get("net_profit"))
         if g and g > 0.05:
-            parts.append(f"Với lợi nhuận tăng {_pct(g)}, P/E trên tốc độ tăng trưởng (PEG) khoảng {pe / (g * 100):.2f}.")
+            parts.append(f"Với lợi nhuận tăng {_pct(g)}, P/E tham chiếu trên tốc độ tăng trưởng (PEG) khoảng {pe / (g * 100):.2f}." if fallback_used else f"Với lợi nhuận tăng {_pct(g)}, P/E trên tốc độ tăng trưởng (PEG) khoảng {pe / (g * 100):.2f}.")
     if profile == "Thận trọng" and pb:
         parts.append("Với phong cách thận trọng, nên so sánh mức P/B này với giá trị sổ sách và chất lượng tài sản để đánh giá biên an toàn.")
     return " ".join(parts)
