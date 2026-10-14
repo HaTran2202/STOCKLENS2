@@ -400,7 +400,7 @@ def _get_vnstock_market_data(
 
 
 def get_market_data(ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
-    """Get StockLens OHLCV with DNSE -> vnstock fallback.
+    """Get StockLens OHLCV, falling back to vnstock on DNSE network failure.
 
     Logic
     -----
