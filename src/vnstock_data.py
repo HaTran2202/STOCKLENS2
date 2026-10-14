@@ -1459,12 +1459,19 @@ def get_financial_data(ticker: str, period: str = "year"):
             try:
                 return get_csv_financial_data(ticker, period)
             except KeyError:
-                if mode == "csv":
-                    raise
+                # The bundled exports cover a finite ticker set. A missing
+                # symbol should use the configured live provider rather than
+                # preventing analysis of an otherwise valid listed stock.
+                pass
             except ValueError as exc:
-                if mode == "csv" or "no mapped corporate revenue" not in str(exc):
+                message=str(exc).casefold()
+                unsupported_csv_mapping=(
+                    "no mapped corporate revenue" in message
+                    or "thiếu tổng thu nhập hoạt động" in message
+                )
+                if not unsupported_csv_mapping:
                     raise
-                # Bank-specific CSV mapping is unsupported. Use KBS instead.
+                # Unsupported issuer accounting maps should use KBS instead.
     return _get_financial_data_vnstock(ticker, period)
 
 if __name__ == "__main__":
