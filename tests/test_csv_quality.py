@@ -28,16 +28,73 @@ def test_year_order_not_reversed():
     assert rows['2025']['equity'] is not None
 
 
-def test_ratio_requires_market_price_match():
+def test_stale_snapshot_falls_back_to_annual_financials():
     data = get_csv_financial_data('FPT')
     assert data['trailingPE'] is None
     bad = reconcile_market_snapshot(data, 65000)
-    assert bad['trailingPE'] is None and bad['priceToBook'] is None
+    assert bad['trailingPE'] == pytest.approx(65000 / data['reportedAnnualEPS'])
+    assert bad['priceToBook'] == pytest.approx(
+        65000 / (data['totalEquity'] / bad['sharesOutstanding'])
+    )
+    assert bad['valuationFallbackUsed'] is True
+    assert any('không dùng P/E/P/B snapshot' in warning for warning in bad['qualityWarnings'])
+
     good = reconcile_market_snapshot(data, 57900)
     assert good['trailingPE'] is not None and good['priceToBook'] is not None
     assert 57900/good['trailingEps'] == pytest.approx(good['trailingPE'])
     assert 57900/good['bookValue'] == pytest.approx(good['priceToBook'])
     assert good['valuationRatiosAreLive'] is False
+    assert good['valuationFallbackUsed'] is False
+
+
+def test_loss_making_ticker_still_scores_valid_price_to_book():
+    data = get_csv_financial_data('TCD')
+    reconciled = reconcile_market_snapshot(data, 33000)
+
+    assert data['reportedAnnualEPS'] < 0
+    assert reconciled['trailingPE'] is None
+    assert reconciled['priceToBook'] > 0
+    assert reconciled['valuationFallbackUsed'] is True
+    assert any('P/E không có ý nghĩa' in warning for warning in reconciled['qualityWarnings'])
+
+    valuation = analyze_valuation(reconciled, 'TCD', 33000)
+    assert valuation['score'] is not None
+    assert 'pb_absolute' in valuation['component_scores']
+    assert valuation['valuation_fallback_used'] is True
+
+
+def test_ticker_missing_from_csv_uses_vnstock_fallback(monkeypatch):
+    import src.vnstock_data as vnstock_data
+
+    monkeypatch.setenv('STOCKLENS_FINANCIAL_SOURCE', 'csv')
+    monkeypatch.setattr(
+        vnstock_data,
+        '_get_financial_data_vnstock',
+        lambda ticker, period: {'ticker': ticker, 'source': 'test provider'},
+    )
+
+    result = vnstock_data.get_financial_data('NOTINCSV', period='year')
+    assert result == {'ticker': 'NOTINCSV', 'source': 'test provider'}
+
+
+def test_unsupported_csv_mapping_uses_vnstock_fallback(monkeypatch):
+    import src.csv_data as csv_data
+    import src.vnstock_data as vnstock_data
+
+    monkeypatch.setenv('STOCKLENS_FINANCIAL_SOURCE', 'csv')
+
+    def unsupported_ticker(*args, **kwargs):
+        raise ValueError('has no mapped corporate revenue')
+
+    monkeypatch.setattr(csv_data, 'get_csv_financial_data', unsupported_ticker)
+    monkeypatch.setattr(
+        vnstock_data,
+        '_get_financial_data_vnstock',
+        lambda ticker, period: {'ticker': ticker, 'source': 'test provider'},
+    )
+
+    result = vnstock_data.get_financial_data('UNSUPPORTED', period='year')
+    assert result == {'ticker': 'UNSUPPORTED', 'source': 'test provider'}
 
 
 def test_fundamental_coverage_and_peer_runs_locally(monkeypatch):
