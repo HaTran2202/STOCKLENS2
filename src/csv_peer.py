@@ -119,7 +119,8 @@ def analyze_csv_peers(ticker, current_price=None, financial_data=None, max_peers
     bvps=live_bvps
     compatible=(len(peers)>=4 and not has_negative and dispersion<=4 and
                 roe_gap is not None and roe_gap<=.12 and price and eps and bvps and
-                fin.get('valuationRatioSourcePeriod'))
+                fin.get('valuationRatioSourcePeriod') and
+                not fin.get('valuationFallbackUsed'))
     if compatible:
         implied_pe=eps*pe_med; implied_pb=bvps*pb_med
         result['implied_price_pe']=implied_pe
