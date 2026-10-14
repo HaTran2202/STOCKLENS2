@@ -769,6 +769,7 @@ def _sec_fundamental(results, summary, fd, company):
 
 def _sec_valuation(results, fd):
     v = results.get("valuation") or {}
+    fallback_used = bool(v.get("valuation_fallback_used"))
     hist = _history(fd)
     fl = _section("Phân tích định giá", "Định giá so với lịch sử của chính doanh nghiệp và so với nhóm cùng ngành")
     sc = _f(v.get("score"))
@@ -778,8 +779,8 @@ def _sec_valuation(results, fd):
     if up is not None and abs(up) > 3:
         up /= 100
     fl.append(_kpis([("Valuation Score", "N/A" if sc is None else f"{sc:.1f}", _label(sc), _tone_color(sc)),
-                     ("P/E hiện tại", _fmt(v.get("pe"), 2, "x"), f"Trung vị LS {_fmt(v.get('historical_pe_median'), 2, 'x')}", BLUE),
-                     ("P/B hiện tại", _fmt(v.get("pb"), 2, "x"), f"Trung vị LS {_fmt(v.get('historical_pb_median'), 2, 'x')}", TEAL),
+                     ("P/E tham chiếu FY" if fallback_used else "P/E hiện tại", _fmt(v.get("pe"), 2, "x"), f"Trung vị LS {_fmt(v.get('historical_pe_median'), 2, 'x')}", BLUE),
+                     ("P/B tham chiếu FY" if fallback_used else "P/B hiện tại", _fmt(v.get("pb"), 2, "x"), f"Trung vị LS {_fmt(v.get('historical_pb_median'), 2, 'x')}", TEAL),
                      ("Peer Fair Value", "N/A" if ref is None else f"{ref:,.0f}", "VND (hàm ý)", PURPLE),
                      ("Chênh lệch", "N/A" if up is None else f"{up * 100:+.1f}%", "so với giá hiện tại", GREEN if (up or 0) >= 0 else RED)]))
     if hist:
@@ -802,7 +803,12 @@ def _sec_valuation(results, fd):
     for ttl, text in (("Nhận định định giá", v.get("commentary")), ("Nhận định so sánh cùng ngành", v.get("peer_commentary") or peer.get("commentary"))):
         if text:
             fl += [Spacer(1, 6), _callout(ttl, [_p(text)], color=PURPLE, bg="#F6F3FF")]
-    fl += [Spacer(1, 4), _p("P/E, P/B snapshot CSV không có ngày công bố; chỉ được dùng khi giá hàm ý khớp thị trường. Peer Fair Value chỉ là giá trị tham chiếu khi mẫu đủ tin cậy, không phải giá mục tiêu.", "small")]
+    note = (
+        "Snapshot không khớp nên P/E/P/B tham chiếu được tính từ giá hiện tại và BCTC năm gần nhất; EPS năm không phải EPS TTM."
+        if fallback_used else
+        "P/E, P/B snapshot CSV không có ngày công bố; chỉ được dùng khi giá hàm ý khớp thị trường."
+    )
+    fl += [Spacer(1, 4), _p(note + " Peer Fair Value chỉ là giá trị tham chiếu khi mẫu đủ tin cậy, không phải giá mục tiêu.", "small")]
     return fl
 
 
