@@ -12,6 +12,7 @@ import html
 import math
 import base64
 import mimetypes
+import os
 import sys
 
 # Keep Windows console/log output usable for Vietnamese provider messages.
@@ -40,7 +41,6 @@ from src.email_delivery import send_report_email, send_test_email, smtp_status
 from src.charts import render_price_workbench
 from src.branding import logo_data_uri
 from src.thesis import build_thesis, recommendation as build_recommendation
-
 
 # -----------------------------------------------------------------------------
 # Page + visual system
@@ -589,8 +589,6 @@ NAV_PAGES = {
     "watchlist": "Danh mục",
     "about": "Giới thiệu hệ thống",
 }
-
-
 def get_current_page() -> str:
     page = st.session_state.get("nav_page", "overview")
     if page not in NAV_PAGES:
@@ -646,9 +644,11 @@ def topbar() -> str:
             (n1, "overview", "Tổng quan", "nav_overview"),
             (n2, "analysis", "Phân tích cổ phiếu", "nav_analysis"),
             (n3, "report", "Báo cáo đầu tư", "nav_report"),
+        ]
+        nav_specs.extend([
             (n4, "watchlist", "Danh mục", "nav_watchlist"),
             (n5, "about", "Giới thiệu hệ thống", "nav_about"),
-        ]
+        ])
         for col, page_key, label, key in nav_specs:
             with col:
                 if st.button(label, key=key, use_container_width=True):
@@ -704,6 +704,7 @@ def build_company(display_ticker, financial_data, df):
         "eps": finite(financial_data.get("trailingEps")),
         "pe": finite(financial_data.get("trailingPE")),
         "pb": finite(financial_data.get("priceToBook")),
+        "valuation_fallback_used": bool(financial_data.get("valuationFallbackUsed")),
         "roe": finite(financial_data.get("returnOnEquity")),
         "dividend_yield": finite(financial_data.get("dividendYield")),
         "report_period": financial_data.get("reportPeriod"),
@@ -904,7 +905,25 @@ def component_chart(summary):
     keys = ["fundamental", "valuation", "technical", "news", "risk"]
     vals = [summary.get("component_scores", {}).get(k) for k in keys]
     plot_vals = [0 if v is None else v for v in vals]
-    fig = go.Figure(go.Bar(x=plot_vals, y=names, orientation="h", marker_color=["#2E86DE","#5C7AEA","#18A999","#F0A52B","#E16A6A"], text=["N/A" if v is None else f"{v:.1f}" for v in vals], textposition="auto"))
+    colors = ["#2E86DE", "#5C7AEA", "#18A999", "#F0A52B", "#E16A6A"]
+    fig = go.Figure(go.Bar(
+        x=plot_vals,
+        y=names,
+        orientation="h",
+        marker_color=colors,
+        text=["" if v is None else f"{v:.1f}" for v in vals],
+        textposition="auto",
+    ))
+    for name, value in zip(names, vals):
+        if value is None:
+            fig.add_annotation(
+                x=1.5,
+                y=name,
+                text="Thiếu dữ liệu",
+                showarrow=False,
+                xanchor="left",
+                font=dict(color="#7B8794", size=11),
+            )
     fig.update_layout(height=280, margin=dict(l=10,r=10,t=5,b=5), paper_bgcolor="white", plot_bgcolor="white", xaxis=dict(range=[0,100], gridcolor="#EDF1F6"), yaxis=dict(autorange="reversed"), showlegend=False)
     return fig
 
@@ -1332,11 +1351,12 @@ def render_overview_page(a, ticker, start, end, profile, df, results, summary, c
             st.warning("PDF chưa tạo được trong lần chạy này.")
 
         is_bank = str(financial_data.get("financialBusinessType") or "").lower() == "bank"
+        valuation_fallback = bool(financial_data.get("valuationFallbackUsed"))
         quick_rows = [
             quick_row("Kỳ BCTC", company.get("report_period") or "N/A"),
             quick_row("LNST", fmt_money(financial_data.get("netIncomeToCommon"), currency)),
-            quick_row("P/E", "N/A" if company.get("pe") is None else f"{company['pe']:.2f}x"),
-            quick_row("P/B", "N/A" if company.get("pb") is None else f"{company['pb']:.2f}x"),
+            quick_row("P/E tham chiếu FY" if valuation_fallback else "P/E", "N/A" if company.get("pe") is None else f"{company['pe']:.2f}x"),
+            quick_row("P/B tham chiếu FY" if valuation_fallback else "P/B", "N/A" if company.get("pb") is None else f"{company['pb']:.2f}x"),
             quick_row("ROE", fmt_pct(company.get("roe"), 2)),
         ]
         if is_bank:
@@ -1388,14 +1408,46 @@ def render_analysis_page(ticker, profile, results, summary, company, financial_d
             label_map = {"fundamental": "Fundamental", "valuation": "Valuation", "technical": "Technical", "news": "News", "risk": "Risk/Safety"}
             for key in ["fundamental", "valuation", "technical", "news", "risk"]:
                 value_ = summary.get("component_scores", {}).get(key)
+                contribution = summary.get("contributions", {}).get(key)
                 rows.append({
                     "Thành phần": label_map[key],
-                    "Điểm": value_,
+                    "Điểm": value_ if value_ is not None else "Thiếu dữ liệu",
                     "Trọng số": f"{weight_map[key]}%",
-                    "Đóng góp": summary.get("contributions", {}).get(key),
+                    "Đóng góp": contribution if contribution is not None else "—",
                 })
             st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
             st.caption("Investment Score cơ sở: 25% Fundamental + 25% Valuation + 25% Technical + 15% News + 10% Risk/Safety.")
+            missing = summary.get("missing") or []
+            if missing:
+                component_names = {
+                    "fundamental": "Fundamental",
+                    "valuation": "Valuation",
+                    "technical": "Technical",
+                    "news": "News",
+                    "risk": "Risk/Safety",
+                }
+                details = []
+                for key in missing:
+                    component = results.get(key) or {}
+                    detail = component.get("commentary") or component.get("error")
+                    if key == "valuation":
+                        warnings = financial_data.get("qualityWarnings") or []
+                        valuation_warnings = [
+                            str(warning)
+                            for warning in warnings
+                            if any(term in str(warning).casefold() for term in ("p/e", "p/b", "snapshot", "giá thị trường"))
+                        ]
+                        if valuation_warnings:
+                            detail = f"{detail or ''} {'; '.join(valuation_warnings[:2])}".strip()
+                    if detail:
+                        details.append(f"{component_names.get(key, key)}: {detail}")
+                    else:
+                        details.append(f"{component_names.get(key, key)}: nguồn dữ liệu chưa có đủ chỉ tiêu hợp lệ.")
+                st.warning(
+                    "Chưa thể tính Investment Score và điểm theo hồ sơ vì thiếu thành phần bắt buộc. "
+                    + " ".join(details)
+                    + " Hãy cập nhật/kiểm tra dữ liệu nguồn rồi phân tích lại; ứng dụng không tự gán điểm thay thế."
+                )
 
         st.markdown('<div class="sl-section-title">Góc nhìn theo hồ sơ nhà đầu tư</div>', unsafe_allow_html=True)
         pc = st.columns(3)
@@ -1615,12 +1667,13 @@ def render_analysis_page(ticker, profile, results, summary, company, financial_d
         pe_median = finite(v.get("historical_pe_median", vm.get("historical_pe_median")))
         pb_median = finite(v.get("historical_pb_median", vm.get("historical_pb_median")))
         valuation_score = finite(v.get("score"))
+        valuation_fallback = bool(v.get("valuation_fallback_used"))
 
         cc = st.columns(5)
         vals = [
             ("Valuation Score", "N/A" if valuation_score is None else f"{valuation_score:.1f}/100", v.get("classification") or "Điểm định giá lịch sử", score_tone(valuation_score)),
-            ("P/E hiện tại", "N/A" if pe_now is None else f"{pe_now:.2f}x", "Multiple lợi nhuận", "blue"),
-            ("P/B hiện tại", "N/A" if pb_now is None else f"{pb_now:.2f}x", "Multiple giá trị sổ sách", "purple"),
+            ("P/E tham chiếu (FY)" if valuation_fallback else "P/E hiện tại", "N/A" if pe_now is None else f"{pe_now:.2f}x", v.get("pe_basis") or "Multiple lợi nhuận", "blue"),
+            ("P/B tham chiếu (FY)" if valuation_fallback else "P/B hiện tại", "N/A" if pb_now is None else f"{pb_now:.2f}x", v.get("pb_basis") or "Multiple giá trị sổ sách", "purple"),
             ("Median P/E lịch sử", "N/A" if pe_median is None else f"{pe_median:.2f}x", "Trung vị lịch sử", "teal"),
             ("Median P/B lịch sử", "N/A" if pb_median is None else f"{pb_median:.2f}x", "Trung vị lịch sử", "pink"),
         ]
@@ -1931,8 +1984,8 @@ def render_report_page(a, ticker, start, end, profile, results, summary, company
             quick_row("Investment Score", "N/A" if summary.get("score") is None else f"{summary['score']:.1f}/100"),
             quick_row("Hồ sơ", profile),
             quick_row("Kỳ BCTC", company.get("report_period") or "N/A"),
-            quick_row("P/E", "N/A" if company.get("pe") is None else f"{company['pe']:.2f}x"),
-            quick_row("P/B", "N/A" if company.get("pb") is None else f"{company['pb']:.2f}x"),
+            quick_row("P/E tham chiếu FY" if company.get("valuation_fallback_used") else "P/E", "N/A" if company.get("pe") is None else f"{company['pe']:.2f}x"),
+            quick_row("P/B tham chiếu FY" if company.get("valuation_fallback_used") else "P/B", "N/A" if company.get("pb") is None else f"{company['pb']:.2f}x"),
         ])
         st.markdown('<div class="sl-panel" style="margin-top:10px">' + quick + '</div>', unsafe_allow_html=True)
 
