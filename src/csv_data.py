@@ -205,7 +205,10 @@ def get_csv_financial_data(ticker: str, period: str='year') -> dict:
     snap_date=str(snapshot.get('period_date') or '').strip() if snapshot is not None else ''
     if snap_date.lower()=='nan':snap_date=''
     if not snap_date:
-        warnings.append('Current Stock Metrics snapshot has no period_date; PE/PB only available after comparing implied price to latest market close')
+        warnings.append(
+            'Current Stock Metrics snapshot has no period_date; use snapshot multiples only when '
+            'the implied price matches the market, otherwise estimate from annual statements when possible.'
+        )
     if latest.get('total_assets') is None or latest.get('equity') is None:
         warnings.append('Missing total assets or total equity in FY balance sheet')
     history=[{k:v for k,v in year_values[y].items() if k in ('period','revenue','gross_profit','net_profit','total_assets','equity','roe','roa','pe','pb')} for y in years]
@@ -291,7 +294,11 @@ def _get_csv_bank_data(ticker, tables, years, classification):
     snapshot_date = str(snapshot.get('period_date') or '').strip() if snapshot is not None else ''
     if snapshot_date.lower() in ('nan','nat'): snapshot_date = ''
     warnings = []
-    if not snapshot_date: warnings.append('P/E P/B snapshot CSV chưa có ngày dữ liệu xác minh.')
+    if not snapshot_date:
+        warnings.append(
+            'P/E P/B snapshot CSV chưa có ngày xác minh; nếu không khớp giá thị trường, '
+            'hệ thống sẽ ước tính từ BCTC năm gần nhất khi đủ dữ liệu.'
+        )
     if latest.get('npl_ratio') is None: warnings.append('Thiếu NPL của ngân hàng.')
     if latest.get('car') is None: warnings.append('Thiếu CAR của ngân hàng.')
     prev = records.get(latest_year-1)
@@ -347,38 +354,127 @@ def _get_csv_bank_data(ticker, tables, years, classification):
 
 
 def reconcile_market_snapshot(info: dict, price: float, tolerance: float=.015) -> dict:
-    """Release undated snapshot ratios ONLY if snapshot cap/shares agrees with market price.
+    """Use snapshot ratios only when their implied price matches the live quote.
 
-    Snapshot PE & PB are kept as source ratios; EPS and BVPS are the VALUES IMPLIED
-    by the pair ratio & market price, NOT verified independent earnings/book value.
+    If the snapshot is absent, invalid, or stale, estimate ratios from the latest
+    annual statements and the supplied market price instead of treating old
+    snapshot multiples as current.
     """
     out=dict(info)
     snap=out.get('_csv_market_snapshot')
     if not isinstance(snap,dict):
         return out
-    p=positive(price); s=positive(snap.get('implied_price'))
-    if not p or not s:
-        out['qualityWarnings']=list(out.get('qualityWarnings',[]))+['Missing market price or snapshot share data; no current PE/PB']
+    out['trailingPE']=None
+    out['priceToBook']=None
+    out['trailingEps']=None
+    out['bookValue']=None
+    out['marketCap']=None
+    out['sharesOutstanding']=None
+    out['valuationRatioSourcePeriod']=None
+    out['valuationFallbackUsed']=False
+    out.pop('epsBasis', None)
+    out.pop('bvpsBasis', None)
+    out.pop('trailingPEBasis', None)
+    out.pop('priceToBookBasis', None)
+    p=positive(price)
+    implied_snapshot_price=positive(snap.get('implied_price'))
+    warnings=list(out.get('qualityWarnings', []) or [])
+    if not p:
+        warnings.append('Thiếu giá thị trường hợp lệ; không thể cập nhật P/E hoặc P/B.')
+        out['qualityWarnings']=warnings
         return out
-    difference=abs(p-s)/p
-    if difference>tolerance:
-        out['qualityWarnings']=list(out.get('qualityWarnings',[]))+[f'Snapshot price {s:,.0f} VND differs from market {p:,.0f} ({difference:.1%}); do not treat PE/PB as current']
-        return out
-    pe=positive(snap.get('pe'));pb=positive(snap.get('pb'))
+
+    snapshot_matches = False
+    if implied_snapshot_price:
+        difference=abs(p-implied_snapshot_price)/p
+        snapshot_matches=difference<=tolerance
+        if not snapshot_matches:
+            warnings.append(
+                f'Giá hàm ý snapshot {implied_snapshot_price:,.0f} VND lệch giá thị trường '
+                f'{p:,.0f} ({difference:.1%}); không dùng P/E/P/B snapshot.'
+            )
+    elif any(positive(snap.get(key)) for key in ('pe', 'pb')):
+        warnings.append('Snapshot thiếu giá hàm ý để đối chiếu; không dùng P/E/P/B snapshot.')
+
+    pe=None
+    pb=None
+    shares=None
+    if snapshot_matches:
+        pe=positive(snap.get('pe'))
+        pb=positive(snap.get('pb'))
+        shares=positive(snap.get('shares'))
+        out['marketCap']=positive(snap.get('market_cap'))
+        out['trailingEps']=(p/pe) if pe else None
+        out['bookValue']=(p/pb) if pb else None
+        out['epsBasis']='EPS hàm ý từ Stock Metrics snapshot không có ngày'
+        out['bvpsBasis']='BVPS hàm ý từ Stock Metrics snapshot không có ngày'
+        out['trailingPEBasis']='P/E snapshot đối chiếu giá thị trường'
+        out['priceToBookBasis']='P/B snapshot đối chiếu giá thị trường'
+        out['valuationRatioSourcePeriod']='Undated CSV snapshot matched to market price'
+        warnings.append(
+            'P/E/P/B snapshot đã khớp giá hàm ý với giá thị trường; snapshot không có ngày công bố.'
+        )
+
+    if pe is None or pb is None:
+        annual_eps = numeric(out.get('reportedAnnualEPS'))
+        annual_period = str(out.get('reportedAnnualEPSPeriod') or out.get('reportPeriod') or 'không rõ kỳ')
+        if pe is None and annual_eps is not None and annual_eps > 0:
+            pe=p/annual_eps
+            out['trailingEps']=annual_eps
+            out['epsBasis']=f'EPS BCTC năm {annual_period}; chưa phải EPS TTM'
+            out['trailingPEBasis']=f'P/E tham chiếu = giá thị trường / EPS BCTC năm {annual_period}'
+
+        if pb is None:
+            shares_from_snapshot=positive(snap.get('shares'))
+            parent_profit=numeric(out.get('netIncomeAttributableToParent'))
+            weighted_shares=None
+            if parent_profit is not None and annual_eps not in (None, 0):
+                candidate=positive(parent_profit/annual_eps)
+                if candidate is not None:
+                    weighted_shares=candidate
+            if shares_from_snapshot and weighted_shares:
+                difference_in_shares=abs(shares_from_snapshot-weighted_shares)/weighted_shares
+                shares=shares_from_snapshot if difference_in_shares<=.20 else weighted_shares
+                if difference_in_shares>.20:
+                    warnings.append(
+                        'Số cổ phiếu snapshot lệch trên 20% so với LNST cổ đông mẹ/EPS năm; '
+                        'dùng số cổ phiếu bình quân hàm ý từ BCTC để ước tính P/B.'
+                    )
+            else:
+                shares=shares_from_snapshot or weighted_shares
+
+            equity=positive(out.get('totalEquity'))
+            if equity and shares:
+                book_value=equity/shares
+                if book_value>0:
+                    pb=p/book_value
+                    out['bookValue']=book_value
+                    out['sharesOutstanding']=shares
+                    out['priceToBookBasis']=(
+                        f'P/B tham chiếu = giá thị trường / BVPS ước tính từ VCSH FY {annual_period} '
+                        'và số cổ phiếu'
+                    )
+
+        fallback_used=pe is not None or pb is not None
+        if fallback_used:
+            out['valuationFallbackUsed']=True
+            out['valuationRatioSourcePeriod']=f'FY {annual_period} statements + current market price (estimated ratios)'
+            warnings.append(
+                f'P/E/P/B thiếu hoặc snapshot không khớp: dùng EPS năm {annual_period} và/hoặc '
+                'VCSH, số cổ phiếu để tính multiple tham chiếu theo giá hiện tại; đây không phải tỷ số TTM trực tiếp.'
+            )
+        if pe is None and annual_eps is not None and annual_eps <= 0:
+            warnings.append(
+                f'EPS năm {annual_period} không dương; P/E không có ý nghĩa và không được chấm điểm.'
+            )
+
     out['trailingPE']=pe
     out['priceToBook']=pb
-    out['marketCap']=positive(snap.get('market_cap'))
-    out['sharesOutstanding']=positive(snap.get('shares'))
-    # Định giá theo bội số từ snapshot; EPS/BVPS suy ra là giá trị hàm ý,
-    # KHÔNG được nhầm với EPS trên BCTC năm hoặc BVPS được kiểm toán.
-    out['trailingEps']=(p/pe) if pe else None
-    out['bookValue']=(p/pb) if pb else None
     out['currentPrice']=p
-    out['epsBasis']='Ratio-implied EPS from Stock Metrics snapshot, not standalone audited EPS'
-    out['bvpsBasis']='Ratio-implied BVPS from Stock Metrics snapshot, not independently sourced BVPS'
-    out['valuationRatiosAreLive']=False # no timestamp even when reconciled
-    out['valuationRatioSourcePeriod']='Undated CSV snapshot matched to market price'
-    out['qualityWarnings']=list(out.get('qualityWarnings',[]))+[
-        'P/E and P/B matched to market snapshot via market_cap/shares, but CSV has no period_date; EPS and BVPS implied by ratios, not audited FY figures'
-    ]
+    out['valuationRatiosAreLive']=False
+    out['valuationFallbackUsed']=bool(out.get('valuationFallbackUsed', False))
+    if shares:
+        out['sharesOutstanding']=shares
+        out['marketCap']=p*shares
+    out['qualityWarnings']=list(dict.fromkeys(warnings))
     return out
