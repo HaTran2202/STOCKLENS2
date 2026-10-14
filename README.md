@@ -143,6 +143,18 @@ Mặc định, ứng dụng chỉ nên dùng trên chính máy tính. Không đ�
 2. Chọn ngày bắt đầu, ngày kết thúc và phong cách đầu tư.
 3. Nhấn Phân tích cổ phiếu.
 4. Dùng các mục Tổng quan, Kỹ thuật, Tài chính, Định giá, Tin tức và Báo cáo.
+
+Khi P/E/P/B trong snapshot CSV không đối chiếu được với giá thị trường, StockLens
+không dùng bội số snapshot cũ. Nếu có đủ dữ liệu, ứng dụng tính P/E tham chiếu từ
+EPS BCTC năm gần nhất và P/B tham chiếu từ vốn chủ sở hữu/số cổ phiếu, đồng thời
+hiển thị cảnh báo kỳ dữ liệu; EPS năm không đồng nhất với EPS TTM. Nếu doanh nghiệp
+không có lợi nhuận dương và cũng thiếu dữ liệu vốn chủ sở hữu hoặc số cổ phiếu hợp lệ,
+thành phần định giá vẫn có thể là N/A vì không có cơ sở đáng tin cậy để tính.
+
+Nếu mã cổ phiếu không có trong các CSV đi kèm hoặc chưa được bộ CSV hỗ trợ hạch toán,
+StockLens tự chuyển sang nguồn vnstock/KBS để lấy dữ liệu tài chính. Nhánh này cần
+Internet và phụ thuộc khả năng cung cấp dữ liệu của nhà cung cấp; lỗi nguồn sẽ được
+báo thay vì tự tạo số liệu.
 5. Trong trang Báo cáo, tạo/tải PDF. Nếu đổi mã hoặc tùy chọn, tạo lại PDF để cập nhật nội dung.
 
 Dữ liệu lấy từ DNSE/vnstock, báo cáo tài chính từ vnstock/KBS, tin tức từ Google News RSS. Một số mã hoặc thời kỳ có thể không có đủ dữ liệu.
@@ -208,7 +220,7 @@ Các thư viện ReportLab, Matplotlib, svglib và Pillow đã có trong require
 - **BCTC mặc định:** CSV đã kèm theo dưới `data/financials-market_2020-2026/`.
 - **Giá giao dịch:** DNSE, yêu cầu khóa API trong `.env` (không commit).
 - **Tin tức:** Google News RSS; điểm cảm xúc chỉ theo tiêu đề, có sai số.
-- **KBS:** Chỉ cần nếu bật `STOCKLENS_FINANCIAL_SOURCE=vnstock` hoặc chủ động cấu hình `auto` cho mã thiếu CSV.
+- **KBS:** Cần Internet khi mã không có trong CSV/không được CSV hỗ trợ hạch toán và ứng dụng phải dùng nguồn vnstock/KBS dự phòng; có thể chọn `STOCKLENS_FINANCIAL_SOURCE=vnstock` để luôn dùng nguồn này.
 - **Lưu ý:** CSV đang dừng ở báo cáo năm 2025; nếu cần kỳ 2026, hãy cập nhật dữ liệu có thể kiểm chứng.
 - **CSV license:** Kiểm tra điều khoản sử dụng của bên cung cấp trước khi tái phân phối trên GitHub công khai.
 
