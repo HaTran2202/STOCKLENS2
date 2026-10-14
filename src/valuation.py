@@ -826,7 +826,14 @@ def analyze_valuation(
         freshness_warning = (
             " Lưu ý: tỷ số từ CSV snapshot thiếu thời điểm công bố; đã đối chiếu mức giá hàm ý, "
             "nhưng không thay thế chỉ số định giá đã kiểm toán." if
-            str(info.get('source') or '').startswith('CSV') else ""
+            str(info.get('source') or '').startswith('CSV')
+            and not info.get("valuationFallbackUsed") else ""
+        )
+        fallback_warning = (
+            f" P/E/P/B tham chiếu được tính từ giá thị trường và BCTC năm "
+            f"{info.get('reportedAnnualEPSPeriod') or info.get('reportPeriod') or 'gần nhất'}; "
+            "EPS năm không đồng nhất với EPS TTM, số liệu cần được xem cùng cảnh báo nguồn."
+            if info.get("valuationFallbackUsed") else ""
         )
         commentary = (
             f"Valuation Score đạt {score:.2f}/100, "
@@ -837,6 +844,7 @@ def analyze_valuation(
             f"Có {coverage}/{total_components} "
             "thành phần đủ dữ liệu."
             + freshness_warning
+            + fallback_warning
         )
 
     else:
@@ -917,6 +925,14 @@ def analyze_valuation(
         ),
 
         "score": score,
+
+        "valuation_fallback_used": bool(info.get("valuationFallbackUsed")),
+
+        "valuation_source_period": info.get("valuationRatioSourcePeriod"),
+
+        "pe_basis": info.get("trailingPEBasis"),
+
+        "pb_basis": info.get("priceToBookBasis"),
 
         "classification": (
             classification
