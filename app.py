@@ -1323,6 +1323,10 @@ def render_overview_page(a, ticker, start, end, profile, df, results, summary, c
     rsk = results["risk"]
     currency = company["currency"]
 
+    # summary["score"] is the base (Balanced) score; show the selected profile score here.
+    profile_score = finite((summary.get("profile_scores") or {}).get(profile))
+    overview_score = profile_score if profile_score is not None else finite(summary.get("score"))
+
     render_company_strip(ticker, company, df=df, results=results, summary=summary)
 
     main_col, report_col = st.columns([4.25, 1.15], gap="small")
@@ -1331,15 +1335,15 @@ def render_overview_page(a, ticker, start, end, profile, df, results, summary, c
         prev_close = finite(df.iloc[-2]["Close"]) if len(df) >= 2 else None
         change = None if last_close is None or prev_close in (None, 0) else last_close / prev_close - 1
         change_text = "Phiên mới nhất" if change is None else f"{change:+.2%} so với phiên trước"
-        overall_label, _ = ui_score_label(summary.get("score"))
+        overall_label, _ = ui_score_label(overview_score)
 
         kcols = st.columns(5, gap="small")
         cards = [
             ("Giá cổ phiếu", fmt_price(last_close, currency), change_text, change_tone(change, "blue")),
-            ("Investment Score", "N/A" if summary.get("score") is None else f"{summary['score']:.1f}/100", overall_label, score_tone(summary.get("score"))),
+            ("Investment Score", "N/A" if overview_score is None else f"{overview_score:.1f}/100", f"Hồ sơ {profile}", score_tone(overview_score)),
             ("Technical Score", "N/A" if t.get("score") is None else f"{t['score']:.1f}/100", t.get("label") or t.get("classification", ""), score_tone(t.get("score"))),
             ("Market Risk/Safety", "N/A" if rsk.get("score") is None else f"{rsk['score']:.1f}/100", "Điểm cao = an toàn hơn", score_tone(rsk.get("score"))),
-            ("Đánh giá tổng hợp", overall_label.upper(), "Theo mô hình StockLens", score_tone(summary.get("score"))),
+            ("Đánh giá tổng hợp", overall_label.upper(), f"Theo hồ sơ {profile}", score_tone(overview_score)),
         ]
         for col, (lab, val, sub, tone) in zip(kcols, cards):
             col.markdown(metric_card(lab, val, sub, tone), unsafe_allow_html=True)
@@ -1351,12 +1355,12 @@ def render_overview_page(a, ticker, start, end, profile, df, results, summary, c
                                    default_overlays=("MA20", "MA50"), default_panels=("Khối lượng",))
             st.markdown('<div class="sl-chart-caption"><b>Biểu đồ 1.</b> Biểu đồ giá tương tác: chọn loại nến/đường, khoảng thời gian, đường MA/Bollinger và khung chỉ báo</div>', unsafe_allow_html=True)
         with score_col:
-            st.markdown('<div class="sl-panel-title" style="margin-top:12px">Investment Score</div>', unsafe_allow_html=True)
-            st.plotly_chart(score_donut(summary.get("score")), use_container_width=True, config={"displayModeBar": False})
-            label, chip = ui_score_label(summary.get("score"))
+            st.markdown(f'<div class="sl-panel-title" style="margin-top:12px">Investment Score · {esc(profile)}</div>', unsafe_allow_html=True)
+            st.plotly_chart(score_donut(overview_score), use_container_width=True, config={"displayModeBar": False})
+            label, chip = ui_score_label(overview_score)
             st.markdown(
                 f'<div style="text-align:center;margin-top:-13px"><span class="sl-chip {chip}">{esc(label)}</span></div>'
-                '<div class="sl-score-note" style="margin-top:8px">80–100: Cơ hội cao &nbsp;•&nbsp; 65–&lt;80: Tích cực<br>50–&lt;65: Trung lập &nbsp;•&nbsp; &lt;50: Thận trọng</div>',
+                f'<div class="sl-score-note" style="margin-top:8px">Theo hồ sơ {esc(profile)} · 80–100: Cơ hội cao &nbsp;•&nbsp; 65–&lt;80: Tích cực<br>50–&lt;65: Trung lập &nbsp;•&nbsp; &lt;50: Thận trọng</div>',
                 unsafe_allow_html=True,
             )
 
