@@ -1,0 +1,21 @@
+# Chuẩn hoá line-ending để tránh diff nhiễu khi làm việc đa nền tảng.
+# Lưu ý: KHÔNG khai báo *.csv để giữ nguyên hiện trạng file dữ liệu.
+*.py    text eol=lf
+*.pyi   text eol=lf
+*.md    text eol=lf
+*.txt   text eol=lf
+*.json  text eol=lf
+*.toml  text eol=lf
+*.cfg   text eol=lf
+*.ini   text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.sh    text eol=lf
+*.svg   text eol=lf
+*.bat   -text
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.ico   binary
+*.pdf   binary
+*.xlsx  binary
