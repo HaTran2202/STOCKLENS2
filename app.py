@@ -22,6 +22,7 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 import pandas as pd
+import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
@@ -1305,6 +1306,10 @@ def render_overview_page(a, ticker, start, end, profile, df, results, summary, c
     rsk = results["risk"]
     currency = company["currency"]
 
+    # summary["score"] is the base (Balanced) score; show the selected profile score here.
+    profile_score = finite((summary.get("profile_scores") or {}).get(profile))
+    overview_score = profile_score if profile_score is not None else finite(summary.get("score"))
+
     render_company_strip(ticker, company, df=df, results=results, summary=summary)
 
     main_col, report_col = st.columns([4.25, 1.15], gap="small")
@@ -1313,15 +1318,15 @@ def render_overview_page(a, ticker, start, end, profile, df, results, summary, c
         prev_close = finite(df.iloc[-2]["Close"]) if len(df) >= 2 else None
         change = None if last_close is None or prev_close in (None, 0) else last_close / prev_close - 1
         change_text = "Phiên mới nhất" if change is None else f"{change:+.2%} so với phiên trước"
-        overall_label, _ = ui_score_label(summary.get("score"))
+        overall_label, _ = ui_score_label(overview_score)
 
         kcols = st.columns(5, gap="small")
         cards = [
             ("Giá cổ phiếu", fmt_price(last_close, currency), change_text, change_tone(change, "blue")),
-            ("Investment Score", "N/A" if summary.get("score") is None else f"{summary['score']:.1f}/100", overall_label, score_tone(summary.get("score"))),
+            ("Investment Score", "N/A" if overview_score is None else f"{overview_score:.1f}/100", f"Hồ sơ {profile}", score_tone(overview_score)),
             ("Technical Score", "N/A" if t.get("score") is None else f"{t['score']:.1f}/100", t.get("label") or t.get("classification", ""), score_tone(t.get("score"))),
             ("Market Risk/Safety", "N/A" if rsk.get("score") is None else f"{rsk['score']:.1f}/100", "Điểm cao = an toàn hơn", score_tone(rsk.get("score"))),
-            ("Đánh giá tổng hợp", overall_label.upper(), "Theo mô hình StockLens", score_tone(summary.get("score"))),
+            ("Đánh giá tổng hợp", overall_label.upper(), f"Theo hồ sơ {profile}", score_tone(overview_score)),
         ]
         for col, (lab, val, sub, tone) in zip(kcols, cards):
             col.markdown(metric_card(lab, val, sub, tone), unsafe_allow_html=True)
@@ -1333,12 +1338,12 @@ def render_overview_page(a, ticker, start, end, profile, df, results, summary, c
                                    default_overlays=("MA20", "MA50"), default_panels=("Khối lượng",))
             st.markdown('<div class="sl-chart-caption"><b>Biểu đồ 1.</b> Biểu đồ giá tương tác: chọn loại nến/đường, khoảng thời gian, đường MA/Bollinger và khung chỉ báo</div>', unsafe_allow_html=True)
         with score_col:
-            st.markdown('<div class="sl-panel-title" style="margin-top:12px">Investment Score</div>', unsafe_allow_html=True)
-            st.plotly_chart(score_donut(summary.get("score")), use_container_width=True, config={"displayModeBar": False})
-            label, chip = ui_score_label(summary.get("score"))
+            st.markdown(f'<div class="sl-panel-title" style="margin-top:12px">Investment Score · {esc(profile)}</div>', unsafe_allow_html=True)
+            st.plotly_chart(score_donut(overview_score), use_container_width=True, config={"displayModeBar": False})
+            label, chip = ui_score_label(overview_score)
             st.markdown(
                 f'<div style="text-align:center;margin-top:-13px"><span class="sl-chip {chip}">{esc(label)}</span></div>'
-                '<div class="sl-score-note" style="margin-top:8px">80–100: Cơ hội cao &nbsp;•&nbsp; 65–&lt;80: Tích cực<br>50–&lt;65: Trung lập &nbsp;•&nbsp; &lt;50: Thận trọng</div>',
+                f'<div class="sl-score-note" style="margin-top:8px">Theo hồ sơ {esc(profile)} · 80–100: Cơ hội cao &nbsp;•&nbsp; 65–&lt;80: Tích cực<br>50–&lt;65: Trung lập &nbsp;•&nbsp; &lt;50: Thận trọng</div>',
                 unsafe_allow_html=True,
             )
 
@@ -1480,15 +1485,29 @@ def render_analysis_page(ticker, profile, results, summary, company, financial_d
         if weight_matrix:
             with st.expander("Bảng trọng số theo phong cách đầu tư"):
                 matrix_rows = []
+                factor_columns = {
+                    "fundamental": "Fundamental",
+                    "valuation": "Valuation",
+                    "technical": "Technical",
+                    "news": "News/Sentiment",
+                    "risk": "Risk/Safety",
+                }
                 for style, detail in weight_matrix.items():
+                    detail = detail if isinstance(detail, dict) else {}
                     weights = detail.get("weights") or {}
                     row = {"Phong cách": detail.get("label") or style,
                            "Lý do": detail.get("rationale") or ""}
-                    for key in ("fundamental", "valuation", "technical", "news", "risk"):
-                        item = weights.get(key) or {}
-                        row[item.get("component_name") or key] = f"{item.get('weight_pct', 0)}%"
+                    for key, column in factor_columns.items():
+                        item = weights.get(key)
+                        item = item if isinstance(item, dict) else {}
+                        pct = item.get("weight_pct")
+                        if pct is None:
+                            raw_weight = finite(item.get("weight"))
+                            pct = round(raw_weight * 100) if raw_weight is not None else None
+                        row[column] = f"{pct:g}%" if isinstance(pct, (int, float)) else "-"
                     matrix_rows.append(row)
-                st.dataframe(pd.DataFrame(matrix_rows), use_container_width=True, hide_index=True)
+                matrix_df = pd.DataFrame(matrix_rows, columns=["Phong cách", "Lý do", *factor_columns.values()]).fillna("-")
+                st.dataframe(matrix_df, use_container_width=True, hide_index=True)
 
         st.markdown('<div class="sl-section-title">Why This Score?</div>', unsafe_allow_html=True)
         pcol, rcol = st.columns(2)
@@ -1541,10 +1560,25 @@ def render_analysis_page(ticker, profile, results, summary, company, financial_d
             if selected_weights:
                 st.markdown('<div class="sl-panel-title" style="margin-top:12px">Trọng số phong cách đang chọn</div>', unsafe_allow_html=True)
                 st.caption(selected_weights.get("rationale") or "")
-                style_rows = [{"Thành phần": item.get("component_name") or key,
-                               "Trọng số": f"{item.get('weight_pct', 0)}%"}
-                              for key, item in (selected_weights.get("weights") or {}).items()]
-                st.dataframe(pd.DataFrame(style_rows), use_container_width=True, hide_index=True)
+                selected_factor_names = {
+                    "fundamental": "Fundamental",
+                    "valuation": "Valuation",
+                    "technical": "Technical",
+                    "news": "News/Sentiment",
+                    "risk": "Risk/Safety",
+                }
+                selected_components = selected_weights.get("weights") or {}
+                style_rows = []
+                for key, component_name in selected_factor_names.items():
+                    item = selected_components.get(key)
+                    item = item if isinstance(item, dict) else {}
+                    pct = item.get("weight_pct")
+                    if pct is None:
+                        raw_weight = finite(item.get("weight"))
+                        pct = round(raw_weight * 100) if raw_weight is not None else None
+                    style_rows.append({"Thành phần": component_name,
+                                       "Trọng số": f"{pct:g}%" if isinstance(pct, (int, float)) else "-"})
+                st.dataframe(pd.DataFrame(style_rows).fillna("-"), use_container_width=True, hide_index=True)
             driver_left, driver_right = st.columns(2)
             with driver_left:
                 st.success("🟢 Yếu tố kéo điểm lên\n\n" + ("\n".join("• " + x for x in positives) if positives else "Chưa có dữ liệu."))
@@ -1963,7 +1997,36 @@ def render_analysis_page(ticker, profile, results, summary, company, financial_d
             chart_df = pd.DataFrame(chart_rows).dropna(subset=["P/E", "P/B"], how="all")
             if not chart_df.empty and len(chart_df) > 1:
                 st.markdown('<div class="sl-panel-title" style="margin-top:12px">So sánh P/E và P/B</div>', unsafe_allow_html=True)
-                st.bar_chart(chart_df.set_index("Mã"), use_container_width=True, height=260)
+                df_melted = chart_df.melt(
+                    id_vars=["Mã"],
+                    value_vars=["P/E", "P/B"],
+                    var_name="Chỉ số",
+                    value_name="Giá trị",
+                ).dropna(subset=["Giá trị"])
+                fig_peers = px.bar(
+                    df_melted,
+                    x="Mã",
+                    y="Giá trị",
+                    color="Chỉ số",
+                    barmode="group",
+                    color_discrete_map={"P/E": "#176FD1", "P/B": "#11B7AE"},
+                    labels={"Mã": "Doanh nghiệp", "Giá trị": "Bội số (x)"},
+                )
+                fig_peers.update_layout(
+                    height=280,
+                    margin=dict(l=10, r=10, t=10, b=10),
+                    paper_bgcolor="white",
+                    plot_bgcolor="white",
+                    legend=dict(orientation="h", y=1.12, x=0),
+                    xaxis_title="",
+                    yaxis_title="Bội số (x)",
+                )
+                fig_peers.update_yaxes(gridcolor="#EDF1F6")
+                st.plotly_chart(
+                    fig_peers,
+                    use_container_width=True,
+                    config={"displayModeBar": False},
+                )
 
             quality_warnings = v.get("peer_quality_warnings") or peer.get("peer_quality_warnings") or []
             with st.expander("ℹ️ Cảnh báo & Nguồn dữ liệu"):
