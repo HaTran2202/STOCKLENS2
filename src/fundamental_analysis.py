@@ -20,6 +20,8 @@ import re
 import unicodedata
 from typing import Any
 
+from src.financial_analytics import analyze_financial_analytics
+
 
 # =========================================================
 # 1. BASIC HELPERS
@@ -440,4 +442,23 @@ def analyze_fundamental(info: dict) -> dict[str, Any]:
         "quality_warnings": quality_warnings,
         "confidence": 'Đủ điều kiện' if score is not None else 'Chưa đủ dữ liệu', 
         "method_note": result["method_note"],
+        "financial_analytics": analyze_financial_analytics(info),
     }
+if __name__ == "__main__":
+    import json
+    from src.vnstock_data import get_financial_data
+
+    symbol = "FPT"
+    print(f"--- ĐANG KIỂM TRA OUTPUT CHO MÃ {symbol} ---")
+
+    info = get_financial_data(ticker=symbol, period="year")
+
+    if not isinstance(info, dict):
+        raise TypeError(
+            f"get_financial_data phải trả về dict, "
+            f"nhưng nhận được {type(info).__name__}: {info!r}"
+        )
+
+    result = analyze_fundamental(info)
+
+    print(json.dumps(result, indent=4, ensure_ascii=False))

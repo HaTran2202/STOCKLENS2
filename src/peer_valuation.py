@@ -66,6 +66,11 @@ def _positive(value: Any) -> Optional[float]:
     return number
 
 
+def _signed(value: Any) -> Optional[float]:
+    """Finite numeric input including negative EPS, which is meaningful."""
+    return _finite(value)
+
+
 def _first_value(data: Dict[str, Any], keys: Sequence[str]) -> Any:
     for key in keys:
         if key in data and data.get(key) is not None:
@@ -403,7 +408,7 @@ def _financial_row(symbol: str, preloaded: Optional[Dict[str, Any]] = None) -> D
             ["priceToBook", "pb", "pb_ratio", "price_to_book"],
         )
     )
-    eps = _positive(
+    eps = _signed(
         _first_value(
             data,
             [
@@ -543,6 +548,7 @@ def _select_icb_peers_from_table(
     ticker: str,
     max_peers: int,
     min_candidates: int = 3,
+    requested_level: Optional[int] = None,
 ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     """Pure helper: select peers from the deepest available ICB level.
 
@@ -580,6 +586,8 @@ def _select_icb_peers_from_table(
                 {int(v) for v in target_rows["__icb_level_num"].tolist()},
                 reverse=True,
             )
+            if requested_level is not None:
+                available_levels = [level for level in available_levels if level < requested_level]
 
             chosen = None
             chosen_peers = pd.DataFrame()
@@ -621,7 +629,15 @@ def _select_icb_peers_from_table(
                         if name_col is not None
                         else None
                     ),
+                    "is_fallback": requested_level is not None or idx > 0,
                 }
+                if requested_level is not None or idx > 0:
+                    metadata["fallback_level"] = (
+                        f"ICB cấp {metadata['icb_level']} / {metadata.get('icb_name') or metadata.get('icb_code')}"
+                    )
+                    metadata["fallback_note"] = (
+                        "Do nhóm ICB hẹp không đủ doanh nghiệp tham chiếu, đã mở rộng lên cấp ICB rộng hơn."
+                    )
 
                 peers_out: List[Dict[str, Any]] = []
                 seen = set()
@@ -772,6 +788,8 @@ def _parse_ratio_dataframe(df: pd.DataFrame, symbol: str) -> Dict[str, Any]:
     pe_col = _find_column(work, ["priceToEarning", "price_to_earning", "pe", "p/e", "pe_ratio"])
     pb_col = _find_column(work, ["priceToBook", "price_to_book", "pb", "p/b", "pb_ratio"])
     roe_col = _find_column(work, ["roe", "returnOnEquity", "return_on_equity"])
+    margin_col = _find_column(work, ["after_tax_margin", "net_margin", "profitMargins", "profit_margin"])
+    growth_col = _find_column(work, ["revenue_growth", "revenueGrowth", "sales_growth"])
 
     if pe_col is not None or pb_col is not None:
         latest = work.iloc[0]
@@ -780,6 +798,8 @@ def _parse_ratio_dataframe(df: pd.DataFrame, symbol: str) -> Dict[str, Any]:
             "pe": _positive(latest.get(pe_col)) if pe_col is not None else None,
             "pb": _positive(latest.get(pb_col)) if pb_col is not None else None,
             "roe": _finite(latest.get(roe_col)) if roe_col is not None else None,
+            "net_margin": _finite(latest.get(margin_col)) if margin_col is not None else None,
+            "revenue_growth": _finite(latest.get(growth_col)) if growth_col is not None else None,
         }
 
     # Report-style fallback.
@@ -805,11 +825,13 @@ def _parse_ratio_dataframe(df: pd.DataFrame, symbol: str) -> Dict[str, Any]:
         "pe": find_metric(["pe_ratio"], ["p/e", "price to earning"], True),
         "pb": find_metric(["pb_ratio"], ["p/b", "price to book"], True),
         "roe": find_metric(["roe"], ["roe", "return on equity"], False),
+        "net_margin": find_metric(["after_tax_margin", "net_margin"], ["after tax margin", "net margin"], False),
+        "revenue_growth": None,
     }
 
 
 @lru_cache(maxsize=128)
-def _peer_ratio_row_cached(symbol: str) -> Tuple[Any, Any, Any, Any, Optional[str]]:
+def _peer_ratio_row_cached(symbol: str) -> Tuple[Any, Any, Any, Any, Any, Any, Optional[str]]:
     symbol = _compact_ticker(symbol)
 
     try:
@@ -827,12 +849,14 @@ def _peer_ratio_row_cached(symbol: str) -> Tuple[Any, Any, Any, Any, Optional[st
             parsed.get("pe"),
             parsed.get("pb"),
             parsed.get("roe"),
+            parsed.get("net_margin"),
+            parsed.get("revenue_growth"),
             None,
         )
     except SystemExit as exc:
-        return symbol, None, None, None, f"Rate limit/SystemExit: {exc}"
+        return symbol, None, None, None, None, None, f"Rate limit/SystemExit: {exc}"
     except BaseException as exc:
-        return symbol, None, None, None, str(exc)
+        return symbol, None, None, None, None, None, str(exc)
 
 
 def _peer_ratio_row(symbol: str) -> Dict[str, Any]:
@@ -842,7 +866,9 @@ def _peer_ratio_row(symbol: str) -> Dict[str, Any]:
         "pe": data[1],
         "pb": data[2],
         "roe": data[3],
-        "error": data[4],
+        "net_margin": data[4],
+        "revenue_growth": data[5],
+        "error": data[6],
     }
 
 
@@ -873,7 +899,7 @@ def analyze_peer_valuation(
     peer_descriptors: List[Dict[str, Any]] = []
 
     # Manual peers.
-    if peer_symbols:
+    if peer_symbols is not None:
         source = "Manual peer list + vnstock Fundamental.ratio"
         seen = set()
         for raw in peer_symbols:
@@ -906,10 +932,22 @@ def analyze_peer_valuation(
             "current_price": current_price,
             "peer_median_pe": None,
             "peer_median_pb": None,
+            "peer_median_roe": None,
+            "pe_peers_median": None,
+            "pb_peers_median": None,
+            "roe_peers_median": None,
             "implied_price_pe": None,
             "implied_price_pb": None,
             "peer_fair_value": None,
+            "fair_value_pe": None,
+            "fair_value_pb": None,
             "upside_downside": None,
+            "upside_commentary": None,
+            "peers_table": [],
+            "is_fallback": False,
+            "fallback_level": None,
+            "fallback_note": None,
+            "fallback": {"is_fallback": False, "fallback_level": None, "note": None},
             "peers": [],
             "positives": [],
             "risks": ["Không tìm được doanh nghiệp cùng phân ngành ICB phù hợp."],
@@ -948,23 +986,58 @@ def analyze_peer_valuation(
                 "pe": pe,
                 "pb": pb,
                 "roe": row.get("roe"),
+                "net_margin": row.get("net_margin"),
+                "revenue_growth": row.get("revenue_growth"),
                 "icb_level": row.get("icb_level"),
                 "icb_code": row.get("icb_code"),
                 "icb_name": row.get("icb_name"),
             }
         )
 
+    # Re-check actual ratio coverage. Candidate counts alone can be misleading
+    # when provider ratios are missing; broaden ICB by one level if needed.
+    if len(cleaned_peers) < 3 and not peer_symbols and industry_meta.get("icb_level"):
+        try:
+            industry_df = _community_industry_table()
+            broader_meta, broader_descriptors = _select_icb_peers_from_table(
+                industry_df, symbol, max_peers=max_peers,
+                requested_level=int(industry_meta["icb_level"]),
+            )
+        except (TypeError, ValueError):
+            broader_meta, broader_descriptors = {}, []
+        if broader_descriptors:
+            broader_rows = []
+            broader_cleaned = []
+            for idx, descriptor in enumerate(broader_descriptors):
+                ratio = _peer_ratio_row(descriptor["symbol"])
+                ratio.update({key: descriptor.get(key) for key in ("name", "icb_level", "icb_code", "icb_name")})
+                broader_rows.append(ratio)
+                if _positive(ratio.get("pe")) is not None or _positive(ratio.get("pb")) is not None:
+                    broader_cleaned.append({
+                        "symbol": ratio.get("symbol"), "name": ratio.get("name"),
+                        "pe": _positive(ratio.get("pe")), "pb": _positive(ratio.get("pb")),
+                        "roe": ratio.get("roe"), "net_margin": ratio.get("net_margin"),
+                        "revenue_growth": ratio.get("revenue_growth"),
+                        "icb_level": ratio.get("icb_level"), "icb_code": ratio.get("icb_code"),
+                        "icb_name": ratio.get("icb_name"),
+                    })
+                if request_delay > 0 and idx < len(broader_descriptors) - 1:
+                    time.sleep(float(request_delay))
+            if len(broader_cleaned) >= 3:
+                peer_rows, cleaned_peers = broader_rows, broader_cleaned
+                peer_descriptors, industry_meta = broader_descriptors, broader_meta
+
     peer_median_pe = _safe_median(row.get("pe") for row in cleaned_peers)
     peer_median_pb = _safe_median(row.get("pb") for row in cleaned_peers)
 
     target_pe = _positive(target.get("pe"))
     target_pb = _positive(target.get("pb"))
-    target_eps = _positive(target.get("eps"))
+    target_eps = _signed(target.get("eps"))
     target_bvps = _positive(target.get("bvps"))
 
     implied_pe = (
         target_eps * peer_median_pe
-        if target_eps is not None and peer_median_pe is not None
+        if target_eps is not None and target_eps > 0 and peer_median_pe is not None
         else None
     )
     implied_pb = (
@@ -979,18 +1052,19 @@ def analyze_peer_valuation(
         icb_code=industry_meta.get("icb_code"),
     )
 
-    peer_fair_value = _weighted_available(
-        {"pe": implied_pe, "pb": implied_pb},
-        {"pe": valuation_weights["pe"], "pb": valuation_weights["pb"]},
-    )
+    fair_components = [value for value in (implied_pe, implied_pb) if value is not None]
+    peer_fair_value = sum(fair_components) / len(fair_components) if fair_components else None
+    eps_warning = None
+    if target_eps is not None and target_eps <= 0:
+        implied_pe = None
+        fair_components = [value for value in (implied_pe, implied_pb) if value is not None]
+        peer_fair_value = sum(fair_components) / len(fair_components) if fair_components else None
+        eps_warning = "EPS không dương; đã bỏ qua Fair Value P/E vì P/E không có ý nghĩa khi doanh nghiệp lỗ."
     # Không công bố giá tham chiếu chính xác khi peer ít hoặc ROE quá khác biệt.
     target_roe = _finite(target.get('roe'))
     peer_roes = [_finite(row.get('roe')) for row in cleaned_peers]
     peer_roes = [r for r in peer_roes if r is not None]
-    peer_quality_blocked = (len(cleaned_peers) < 4 or
-        any(r < 0 for r in peer_roes) or
-        (target_roe is not None and peer_roes and
-         abs(target_roe - (statistics.median(peer_roes))) > 0.12))
+    peer_quality_blocked = len(cleaned_peers) < 3
     if peer_quality_blocked:
         peer_fair_value = None
 
@@ -1077,6 +1151,36 @@ def analyze_peer_valuation(
         peer_quality_status = 'Chưa đủ tin cậy'
         peer_quality_warnings.append('Giá trị hàm ý bị ẩn do mẫu peer nhỏ, ROE âm hoặc chênh lệch ROE quá lớn (>12 điểm %).')
 
+    if peer_quality_blocked:
+        peer_quality_warnings.append('Cần ít nhất 3 peer hợp lệ để công bố median và giá trị hàm ý.')
+    elif any(value < 0 for value in peer_roes) or (
+        target_roe is not None and peer_roes and
+        abs(target_roe - statistics.median(peer_roes)) > 0.12
+    ):
+        peer_quality_status = 'Tham khảo, có cảnh báo'
+        peer_quality_warnings.append('ROE mục tiêu khác biệt đáng kể với nhóm peers; cần thận trọng khi diễn giải.')
+    if eps_warning:
+        peer_quality_warnings.append(eps_warning)
+
+    peer_median_roe = statistics.median(peer_roes) if peer_roes else None
+    peers_table = [{
+        "ticker": row.get("symbol"),
+        "company_name": row.get("name") or row.get("symbol"),
+        "pe": _positive(row.get("pe")),
+        "pb": _positive(row.get("pb")),
+        "roe": _finite(row.get("roe")),
+        "net_margin": _finite(row.get("net_margin")),
+        "revenue_growth": _finite(row.get("revenue_growth")),
+    } for row in cleaned_peers[:5]]
+    if upside_downside is None:
+        upside_commentary = None
+    elif upside_downside > 0.15:
+        upside_commentary = "Định giá tương đối hấp dẫn hơn so với mặt bằng chung cùng ngành."
+    elif upside_downside < -0.15:
+        upside_commentary = "Định giá đang ở mức cao hơn (premium) so với các doanh nghiệp cùng ngành."
+    else:
+        upside_commentary = "Định giá ở mức tương đương trung vị ngành."
+
     comparison_parts = []
     if target_pe is not None and peer_median_pe is not None:
         comparison_parts.append(f"P/E {target_pe:.2f}x vs median {peer_median_pe:.2f}x")
@@ -1139,12 +1243,28 @@ def analyze_peer_valuation(
         "current_price": current_price,
         "peer_median_pe": peer_median_pe,
         "peer_median_pb": peer_median_pb,
+        "peer_median_roe": peer_median_roe,
+        "pe_peers_median": peer_median_pe,
+        "pb_peers_median": peer_median_pb,
+        "roe_peers_median": peer_median_roe,
         "pe_relative": pe_relative,
         "pb_relative": pb_relative,
         "implied_price_pe": implied_pe,
         "implied_price_pb": implied_pb,
         "peer_fair_value": peer_fair_value,
+        "fair_value_pe": implied_pe,
+        "fair_value_pb": implied_pb,
         "upside_downside": upside_downside,
+        "upside_commentary": upside_commentary,
+        "peers_table": peers_table,
+        "is_fallback": bool(industry_meta.get("is_fallback", False)),
+        "fallback_level": industry_meta.get("fallback_level"),
+        "fallback_note": industry_meta.get("fallback_note"),
+        "fallback": {
+            "is_fallback": bool(industry_meta.get("is_fallback", False)),
+            "fallback_level": industry_meta.get("fallback_level"),
+            "note": industry_meta.get("fallback_note"),
+        },
         "valuation_weights": {
             "pe": valuation_weights["pe"],
             "pb": valuation_weights["pb"],
@@ -1252,3 +1372,14 @@ if __name__ == "__main__":
     print("Commentary:", result.get("commentary"))
     print()
     print("peer valuation test: OK")
+
+if __name__ == '__main__':
+    import json
+    symbol = "FPT"
+    print(f"--- KIỂM TRA ĐỊNH GIÁ & PEERS CHO MÃ {symbol} ---")
+
+    # Gọi hàm phân tích định giá chính (ví dụ analyze_valuation)
+    result = analyze_valuation(symbol)
+
+    # In ra dạng JSON formatted
+    print(json.dumps(result, indent=4, ensure_ascii=False))

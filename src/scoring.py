@@ -60,11 +60,11 @@ WEIGHTS = {
 PROFILES = {
 
     "Thận trọng": {
-        "fundamental": 0.25,
-        "valuation": 0.20,
-        "technical": 0.15,
+        "fundamental": 0.30,
+        "valuation": 0.25,
+        "technical": 0.10,
         "news": 0.10,
-        "risk": 0.30,
+        "risk": 0.25,
     },
 
     "Cân bằng": {
@@ -76,14 +76,13 @@ PROFILES = {
     },
 
     "Tăng trưởng": {
-        "fundamental": 0.35,
-        "valuation": 0.15,
+        "fundamental": 0.30,
+        "valuation": 0.20,
         "technical": 0.30,
-        "news": 0.15,
-        "risk": 0.05,
+        "news": 0.10,
+        "risk": 0.10,
     },
 }
-
 
 # =========================================================
 # 3. DISPLAY NAMES
@@ -1082,6 +1081,47 @@ def score_all(
         ) in profile_scores.items()
     }
 
+    weight_breakdown = {}
+    for profile_name, weights in PROFILES.items():
+        style_key = ("conservative" if weights.get("risk") == 0.25 else
+                     "balanced" if weights.get("news") == 0.15 else "growth")
+        detail = {
+            "conservative": {
+                "label": "Thận trọng",
+                "rationale": "Ưu tiên BCTC và an toàn, giảm tỷ trọng kỹ thuật.",
+            },
+            "balanced": {
+                "label": "Cân bằng",
+                "rationale": "Phân bổ đồng đều giữa tài chính, định giá, kỹ thuật, tin tức và rủi ro.",
+            },
+            "growth": {
+                "label": "Tăng trưởng",
+                "rationale": "Ưu tiên kỹ thuật/dòng tiền và tăng trưởng BCTC.",
+            },
+        }[style_key]
+        weight_breakdown[profile_name] = {
+            "label": detail.get("label", profile_name),
+            "rationale": detail.get("rationale"),
+            "weights": {
+                key: {"weight": weight, "weight_pct": round(weight * 100),
+                      "component_name": COMPONENT_NAMES.get(key, key)}
+                for key, weight in weights.items()
+            },
+        }
+
+    positive_drivers, negative_drivers = [], []
+    for key in ("fundamental", "valuation", "technical", "news", "risk"):
+        component = results.get(key) or {}
+        prefix = COMPONENT_NAMES.get(key, key)
+        for item in component.get("positives", []) or []:
+            text = str(item).strip()
+            if text:
+                positive_drivers.append(f"{prefix}: {text}")
+        for item in component.get("risks", []) or []:
+            text = str(item).strip()
+            if text:
+                negative_drivers.append(f"{prefix}: {text}")
+
     # =====================================================
     # AVAILABLE COMPONENTS
     # =====================================================
@@ -1159,6 +1199,19 @@ def score_all(
                 ]
             ),
         }
+
+        if strongest_component:
+            positive_drivers.insert(
+                0,
+                f"{strongest_component['name']} là thành phần mạnh nhất "
+                f"({strongest_component['score']:.1f}/100).",
+            )
+        if weakest_component:
+            negative_drivers.insert(
+                0,
+                f"{weakest_component['name']} là thành phần yếu nhất "
+                f"({weakest_component['score']:.1f}/100).",
+            )
 
     # =====================================================
     # COMMENTARY
@@ -1293,6 +1346,13 @@ def score_all(
             name: weights.copy()
             for name, weights
             in PROFILES.items()
+        },
+        "weight_breakdown": weight_breakdown,
+        "positive_drivers": list(dict.fromkeys(positive_drivers))[:8],
+        "negative_drivers": list(dict.fromkeys(negative_drivers))[:8],
+        "why_this_score": {
+            "positive_drivers": list(dict.fromkeys(positive_drivers))[:8],
+            "negative_drivers": list(dict.fromkeys(negative_drivers))[:8],
         },
 
         # -----------------------------------------------

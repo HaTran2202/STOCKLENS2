@@ -23,6 +23,7 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 import pandas as pd
+import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
@@ -686,6 +687,45 @@ def load_financial(ticker: str):
     return get_financial_data(compact_ticker(ticker), period="year")
 
 
+@st.cache_data(ttl=1800, show_spinner=False)
+def load_fundamental(financial_data: dict):
+    return analyze_fundamental(financial_data)
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def load_valuation(financial_data: dict, ticker: str, current_price: float, peer_symbols=None):
+    return analyze_valuation(financial_data, ticker=ticker, current_price=current_price,
+                             peer_symbols=peer_symbols)
+
+
+def peer_selection_options(ticker: str, peer_result: dict):
+    """Return locally known same-industry symbols and the automatic peer set."""
+    options = []
+    try:
+        from src.industry import peer_candidate_groups
+        for group in peer_candidate_groups(ticker, limit=35):
+            for symbol in group.get("symbols", []):
+                symbol = str(symbol).strip().upper()
+                if symbol and symbol != ticker.upper() and symbol not in options:
+                    options.append(symbol)
+    except Exception:
+        pass
+    peers = peer_result.get("peers") or []
+    defaults = [str(row.get("symbol") or row.get("ticker") or "").upper()
+                for row in peers if isinstance(row, dict)]
+    defaults = [symbol for symbol in defaults if symbol in options]
+    if not options:
+        options = list(dict.fromkeys(symbol for symbol in defaults if symbol))
+    if not defaults:
+        defaults = options[:5]
+    return options, defaults[:5]
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def load_news(ticker: str, company_name: str):
+    return analyze_news(ticker, company_name)
+
+
 def build_company(display_ticker, financial_data, df):
     domain = COMPANY_DOMAINS.get(display_ticker.upper())
     website = f"https://{domain}" if domain else (financial_data.get("website") or "")
@@ -1059,29 +1099,23 @@ def render_analysis_form():
         display_ticker = compact_ticker(ticker_input)
         progress.progress(18, text="Đang lấy BCTC từ CSV hoặc vnstock/KBS...")
         financial_data = reconcile_market_snapshot(load_financial(display_ticker), float(df.iloc[-1]["Close"]))
-        if financial_data.get('qualityWarnings'):
-            st.warning('Lưu ý dữ liệu: ' + '; '.join(financial_data['qualityWarnings'][:2]))
         company = build_company(display_ticker, financial_data, df)
 
         progress.progress(35, text="Đang tính chỉ báo kỹ thuật...")
         tech = analyze_technical(df, chart_dir=str(Path("charts") / display_ticker))
 
         progress.progress(53, text="Đang phân tích tài chính, định giá lịch sử và peer valuation...")
-        fund = analyze_fundamental(financial_data)
+        fund = load_fundamental(financial_data)
         current_price = float(df.iloc[-1]["Close"])
 
-        value = analyze_valuation(
-            financial_data,
-            ticker=display_ticker,
-            current_price=current_price,
-        )
+        value = load_valuation(financial_data, display_ticker, current_price)
 
         resolved_industry = ((value.get('peer_valuation') or {}).get('industry') or '').strip()
         if resolved_industry and company.get('sector') == 'Chưa có dữ liệu ngành':
             company['sector'] = resolved_industry
             company['industry'] = resolved_industry
         progress.progress(67, text="Đang tổng hợp tin tức...")
-        news = analyze_news(display_ticker, company["name"])
+        news = load_news(display_ticker, company["name"])
 
         progress.progress(78, text="Đang đánh giá rủi ro và Investment Score...")
         risk = market_risk(tech)
@@ -1386,6 +1420,9 @@ def render_analysis_page(ticker, profile, results, summary, company, financial_d
 
     render_company_strip(ticker, company, results=results, summary=summary)
     positives, risks = collect_insights(results)
+    why = summary.get("why_this_score") or {}
+    positives = list(why.get("positive_drivers") or positives)
+    risks = list(why.get("negative_drivers") or risks)
 
     st.markdown('<div class="sl-section-title">Phân tích cổ phiếu</div>', unsafe_allow_html=True)
     tabs = st.tabs([
@@ -1457,6 +1494,34 @@ def render_analysis_page(ticker, profile, results, summary, company, financial_d
             with col:
                 st.markdown(kpi(name, "N/A" if val is None else f"{val:.1f}/100", lab, score_class(val)), unsafe_allow_html=True)
 
+        weight_matrix = summary.get("weight_breakdown") or {}
+        if weight_matrix:
+            with st.expander("Bảng trọng số theo phong cách đầu tư"):
+                matrix_rows = []
+                factor_columns = {
+                    "fundamental": "Fundamental",
+                    "valuation": "Valuation",
+                    "technical": "Technical",
+                    "news": "News/Sentiment",
+                    "risk": "Risk/Safety",
+                }
+                for style, detail in weight_matrix.items():
+                    detail = detail if isinstance(detail, dict) else {}
+                    weights = detail.get("weights") or {}
+                    row = {"Phong cách": detail.get("label") or style,
+                           "Lý do": detail.get("rationale") or ""}
+                    for key, column in factor_columns.items():
+                        item = weights.get(key)
+                        item = item if isinstance(item, dict) else {}
+                        pct = item.get("weight_pct")
+                        if pct is None:
+                            raw_weight = finite(item.get("weight"))
+                            pct = round(raw_weight * 100) if raw_weight is not None else None
+                        row[column] = f"{pct:g}%" if isinstance(pct, (int, float)) else "-"
+                    matrix_rows.append(row)
+                matrix_df = pd.DataFrame(matrix_rows, columns=["Phong cách", "Lý do", *factor_columns.values()]).fillna("-")
+                st.dataframe(matrix_df, use_container_width=True, hide_index=True)
+
         st.markdown('<div class="sl-section-title">Why This Score?</div>', unsafe_allow_html=True)
         pcol, rcol = st.columns(2)
         with pcol:
@@ -1482,6 +1547,18 @@ def render_analysis_page(ticker, profile, results, summary, company, financial_d
             ]
             for col, (lab, val, sub, tone) in zip(mc, metrics):
                 col.markdown(metric_card(lab, val, sub, tone), unsafe_allow_html=True)
+            levels = st.columns(2)
+            support = finite(t.get("support_level"))
+            resistance = finite(t.get("resistance_level"))
+            support_distance = finite(t.get("distance_to_support_pct"))
+            resistance_distance = finite(t.get("distance_to_resistance_pct"))
+            levels[0].markdown(metric_card("Hỗ trợ gần nhất", fmt_price(support, currency),
+                                           "Khoảng cách " + (f"{support_distance:+.2f}%" if support_distance is not None else "N/A"), "green"), unsafe_allow_html=True)
+            levels[1].markdown(metric_card("Kháng cự gần nhất", fmt_price(resistance, currency),
+                                           "Khoảng cách " + (f"{resistance_distance:+.2f}%" if resistance_distance is not None else "N/A"), "red"), unsafe_allow_html=True)
+            divergence = t.get("divergence") or {}
+            if divergence.get("signal") or t.get("rsi_state"):
+                st.caption("RSI: " + str(t.get("rsi_state") or "N/A") + " · Phân kỳ: " + str(divergence.get("signal") or "Chưa phát hiện"))
             render_price_workbench(t["data"], currency, key="tech", default_range="1Y",
                                    default_overlays=("MA20", "MA50"), default_panels=("Khối lượng", "RSI", "MACD"))
             st.markdown('<div class="sl-chart-caption"><b>Biểu đồ 2.</b> Giá cùng MA, Bollinger và các khung khối lượng, RSI(14), MACD(12,26,9), Stochastic</div>', unsafe_allow_html=True)
@@ -1489,6 +1566,37 @@ def render_analysis_page(ticker, profile, results, summary, company, financial_d
             for key, sig in t.get("signals", {}).items():
                 signal_rows.append({"Chỉ báo": key, "Tín hiệu": sig.get("signal"), "Điểm": sig.get("score")})
             st.dataframe(pd.DataFrame(signal_rows), use_container_width=True, hide_index=True)
+            if t.get("action_scenario"):
+                st.info(t["action_scenario"])
+            weight_matrix = summary.get("weight_breakdown") or {}
+            selected_weights = weight_matrix.get(profile)
+            if selected_weights:
+                st.markdown('<div class="sl-panel-title" style="margin-top:12px">Trọng số phong cách đang chọn</div>', unsafe_allow_html=True)
+                st.caption(selected_weights.get("rationale") or "")
+                selected_factor_names = {
+                    "fundamental": "Fundamental",
+                    "valuation": "Valuation",
+                    "technical": "Technical",
+                    "news": "News/Sentiment",
+                    "risk": "Risk/Safety",
+                }
+                selected_components = selected_weights.get("weights") or {}
+                style_rows = []
+                for key, component_name in selected_factor_names.items():
+                    item = selected_components.get(key)
+                    item = item if isinstance(item, dict) else {}
+                    pct = item.get("weight_pct")
+                    if pct is None:
+                        raw_weight = finite(item.get("weight"))
+                        pct = round(raw_weight * 100) if raw_weight is not None else None
+                    style_rows.append({"Thành phần": component_name,
+                                       "Trọng số": f"{pct:g}%" if isinstance(pct, (int, float)) else "-"})
+                st.dataframe(pd.DataFrame(style_rows).fillna("-"), use_container_width=True, hide_index=True)
+            driver_left, driver_right = st.columns(2)
+            with driver_left:
+                st.success("🟢 Yếu tố kéo điểm lên\n\n" + ("\n".join("• " + x for x in positives) if positives else "Chưa có dữ liệu."))
+            with driver_right:
+                st.error("🔴 Yếu tố kéo điểm xuống\n\n" + ("\n".join("• " + x for x in risks) if risks else "Chưa ghi nhận rủi ro nổi bật."))
             st.info(t.get("commentary", ""))
             with st.expander("Xem 30 phiên OHLCV và chỉ báo gần nhất"):
                 st.dataframe(t["data"].tail(30), use_container_width=True, hide_index=True)
@@ -1555,6 +1663,31 @@ def render_analysis_page(ticker, profile, results, summary, company, financial_d
                 col.markdown(metric_card(lab, val, sub, tone), unsafe_allow_html=True)
 
         st.info(f.get("commentary", "Không đủ dữ liệu tài chính."))
+
+        analytics = f.get("financial_analytics") or {}
+        dupont = analytics.get("dupont") or {}
+        if dupont:
+            st.markdown('<div class="sl-panel-title" style="margin-top:12px">Phân rã ROE DuPont</div>', unsafe_allow_html=True)
+            dc = st.columns(4)
+            dupont_current = dupont.get("current") or {}
+            for col, (label, key) in zip(dc, [("Biên lợi nhuận ròng", "net_margin"), ("Vòng quay tài sản", "asset_turnover"), ("Đòn bẩy vốn chủ", "equity_multiplier"), ("ROE", "roe")]):
+                value = finite(dupont_current.get(key))
+                display = fmt_pct(value, 2) if key in ("net_margin", "roe") else ("N/A" if value is None else f"{value:.2f}x")
+                col.markdown(metric_card(label, display, "DuPont 3 yếu tố", "blue"), unsafe_allow_html=True)
+            if dupont.get("commentary"):
+                st.caption(dupont["commentary"])
+        earnings = analytics.get("earnings_quality") or {}
+        if earnings:
+            level = str(earnings.get("level") or "unknown").lower()
+            message = earnings.get("commentary") or "Chưa đủ dữ liệu OCF/LNST để đánh giá chất lượng lợi nhuận."
+            if level in ("risk", "high_risk", "high"):
+                st.error("🔴 " + message)
+            elif level == "warning":
+                st.warning("🟡 " + message)
+            elif earnings.get("available"):
+                st.success("🟢 " + message)
+            else:
+                st.info(message)
 
         component_label_map = {
             "roe": "ROE",
@@ -1650,7 +1783,11 @@ def render_analysis_page(ticker, profile, results, summary, company, financial_d
                         else:
                             st.dataframe(table_, use_container_width=True, hide_index=True, height=430)
 
-        st.caption("Nguồn tài chính: vnstock / KBS. Giá thị trường: DNSE OpenAPI.")
+        with st.expander("ℹ️ Cảnh báo & Nguồn dữ liệu"):
+            st.caption("Nguồn tài chính: vnstock / KBS. Giá thị trường: DNSE OpenAPI.")
+            source_warnings = financial_data.get("qualityWarnings") or []
+            if source_warnings:
+                st.warning("Lưu ý dữ liệu: " + "; ".join(str(x) for x in source_warnings))
         if company.get("description"):
             with st.expander("Mô tả doanh nghiệp từ vnstock"):
                 st.write(company["description"])
@@ -1708,13 +1845,28 @@ def render_analysis_page(ticker, profile, results, summary, company, financial_d
         st.markdown('<div class="sl-section-title" style="margin-top:18px">Peer Valuation – so sánh doanh nghiệp cùng ngành</div>', unsafe_allow_html=True)
 
         peer = v.get("peer_valuation", {}) or {}
+        all_industry_peers, default_peer_symbols = peer_selection_options(ticker, peer)
 
-        if not peer.get("data_available"):
+        if not peer.get("data_available") and not all_industry_peers:
             st.warning(
                 peer.get("commentary")
                 or "Chưa đủ dữ liệu doanh nghiệp cùng ngành để thực hiện Peer Valuation."
             )
         else:
+            peer_selection_key = f"peer_selection_{ticker}"
+            if peer_selection_key not in st.session_state:
+                st.session_state[peer_selection_key] = default_peer_symbols
+            selected_peers = st.multiselect(
+                "Tuỳ chỉnh danh sách doanh nghiệp so sánh cùng ngành:",
+                options=all_industry_peers,
+                max_selections=5,
+                key=peer_selection_key,
+                help="Lựa chọn này cập nhật trung vị peer và Peer Fair Value. Bỏ chọn hết để xem trạng thái chưa chọn peer.",
+            )
+            v = load_valuation(financial_data, ticker, finite(t.get("close")) or 0.0,
+                               tuple(selected_peers))
+            results["valuation"] = v
+            peer = v.get("peer_valuation", {}) or {}
             peer_score = finite(v.get("peer_score", peer.get("score")))
             peer_fair_value = finite(v.get("peer_fair_value", peer.get("peer_fair_value")))
             peer_upside = finite(v.get("peer_upside_downside", peer.get("upside_downside")))
@@ -1770,6 +1922,8 @@ def render_analysis_page(ticker, profile, results, summary, company, financial_d
             else:
                 meta_parts.append(f"{peer_count} peer hợp lệ")
             meta_parts.append(weight_label)
+            fallback = v.get("fallback") or peer.get("fallback") or {}
+            fallback_active = bool(v.get("is_fallback", peer.get("is_fallback", fallback.get("is_fallback", False))))
             st.caption(" • ".join(meta_parts))
 
             # Các đầu vào quy đổi multiple thành giá hàm ý
@@ -1791,45 +1945,115 @@ def render_analysis_page(ticker, profile, results, summary, company, financial_d
                     continue
                 sym = str(q.get("symbol") or "").upper()
                 flags = q.get("flags") or []
+                if isinstance(flags, str):
+                    flags = [flag.strip() for flag in flags.split(";") if flag.strip() and flag.strip() != "-"]
                 quality_map[sym] = {
                     "status": q.get("status") or "N/A",
-                    "flags": "; ".join(str(x) for x in flags) if flags else "-",
+                    "raw_flags": [str(x) for x in flags],
+                    "flags": "; ".join(str(x) for x in flags) if flags else "",
                 }
 
             peer_rows = []
-            for row in peer.get("peers", []) or []:
+            chart_rows = [{"Mã": ticker, "P/E": finite(v.get("pe")), "P/B": finite(v.get("pb"))}]
+            for row in (peer.get("peers", []) or [])[:5]:
                 if not isinstance(row, dict):
                     continue
                 sym = str(row.get("symbol") or "").upper()
                 q = quality_map.get(sym, {})
                 roe = finite(row.get("roe"))
+                net_margin = finite(row.get("net_margin"))
+                revenue_growth = finite(row.get("revenue_growth"))
                 pe_peer = finite(row.get("pe"))
                 pb_peer = finite(row.get("pb"))
+                flags = q.get("raw_flags") or []
+                status = str(q.get("status") or "OK").casefold()
+                if not flags and status in ("ok", "đạt chuẩn", "pass"):
+                    quality_label, warning_label = "🟢 Đạt chuẩn", "Chưa phát hiện rủi ro"
+                elif any("âm" in flag.casefold() or "negative" in flag.casefold() for flag in flags):
+                    quality_label = "🔴 Cần lưu ý"
+                    warning_label = "🔴 " + "; ".join(flags)
+                else:
+                    quality_label = "⚠️ Cảnh báo"
+                    warning_label = "⚠️ " + "; ".join(flags or [str(q.get("status") or "Cần kiểm tra dữ liệu")])
                 peer_rows.append({
                     "Mã": sym,
                     "Doanh nghiệp": row.get("name") or sym,
-                    "P/E": "N/A" if pe_peer is None else f"{pe_peer:.2f}x",
-                    "P/B": "N/A" if pb_peer is None else f"{pb_peer:.2f}x",
-                    "ROE": "N/A" if roe is None else f"{roe * 100:.2f}%",
-                    "Quality": q.get("status", "OK"),
-                    "Cảnh báo": q.get("flags", "-"),
+                    "P/E": pe_peer,
+                    "P/B": pb_peer,
+                    "ROE": roe,
+                    "Biên LN ròng": net_margin,
+                    "Tăng trưởng DT": revenue_growth,
+                    "Quality": quality_label,
+                    "Cảnh báo": warning_label,
                 })
+                chart_rows.append({"Mã": sym, "P/E": pe_peer, "P/B": pb_peer})
 
             if peer_rows:
                 peer_df = pd.DataFrame(peer_rows)
-                st.dataframe(peer_df, use_container_width=True, hide_index=True)
+                styled_peers = peer_df.style.format(
+                    {"P/E": "{:.2f}x", "P/B": "{:.2f}x", "ROE": "{:.2%}",
+                     "Biên LN ròng": "{:.2%}", "Tăng trưởng DT": "{:.2%}"}, na_rep="N/A")
+                try:
+                    styled_peers = styled_peers.background_gradient(
+                        subset=["ROE", "Biên LN ròng", "Tăng trưởng DT"], cmap="RdYlGn")
+                except (ValueError, TypeError):
+                    pass
+                styled_peers = styled_peers.set_properties(
+                    subset=["Quality", "Cảnh báo"], **{"white-space": "normal"})
+                st.dataframe(styled_peers, use_container_width=True, hide_index=True)
+                peer_median_roe = finite(v.get("peer_median_roe", peer.get("peer_median_roe")))
+                if peer_median_roe is not None:
+                    st.caption(f"ROE trung vị nhóm peers: {peer_median_roe:.2%}")
             else:
-                st.warning("Không có peer hợp lệ để hiển thị trong bảng.")
+                st.info("Chưa có peer hợp lệ trong lựa chọn hiện tại. Chọn thêm mã cùng ngành để tính lại trung vị.")
+
+            chart_df = pd.DataFrame(chart_rows).dropna(subset=["P/E", "P/B"], how="all")
+            if not chart_df.empty and len(chart_df) > 1:
+                st.markdown('<div class="sl-panel-title" style="margin-top:12px">So sánh P/E và P/B</div>', unsafe_allow_html=True)
+                df_melted = chart_df.melt(
+                    id_vars=["Mã"],
+                    value_vars=["P/E", "P/B"],
+                    var_name="Chỉ số",
+                    value_name="Giá trị",
+                ).dropna(subset=["Giá trị"])
+                fig_peers = px.bar(
+                    df_melted,
+                    x="Mã",
+                    y="Giá trị",
+                    color="Chỉ số",
+                    barmode="group",
+                    color_discrete_map={"P/E": "#176FD1", "P/B": "#11B7AE"},
+                    labels={"Mã": "Doanh nghiệp", "Giá trị": "Bội số (x)"},
+                )
+                fig_peers.update_layout(
+                    height=280,
+                    margin=dict(l=10, r=10, t=10, b=10),
+                    paper_bgcolor="white",
+                    plot_bgcolor="white",
+                    legend=dict(orientation="h", y=1.12, x=0),
+                    xaxis_title="",
+                    yaxis_title="Bội số (x)",
+                )
+                fig_peers.update_yaxes(gridcolor="#EDF1F6")
+                st.plotly_chart(
+                    fig_peers,
+                    use_container_width=True,
+                    config={"displayModeBar": False},
+                )
 
             quality_warnings = v.get("peer_quality_warnings") or peer.get("peer_quality_warnings") or []
-            if quality_warnings:
-                warning_text = "\n".join(f"• {x}" for x in quality_warnings)
-                if str(peer_quality).lower().startswith("cần"):
-                    st.warning(f"**Chất lượng bộ peer: {peer_quality}**\n\n{warning_text}")
+            with st.expander("ℹ️ Cảnh báo & Nguồn dữ liệu"):
+                st.caption("Nguồn giá: DNSE OpenAPI · Nguồn BCTC: " + str(financial_data.get("source") or "vnstock/KBS"))
+                if fallback_active:
+                    st.warning("Ngành tham chiếu fallback: " + str(v.get("fallback_level") or peer.get("fallback_level") or fallback.get("fallback_level") or "N/A") + ". " + str(v.get("fallback_note") or peer.get("fallback_note") or fallback.get("note") or ""))
+                if quality_warnings:
+                    warning_text = "\n".join(f"• {x}" for x in quality_warnings)
+                    st.warning(f"Chất lượng bộ peer: {peer_quality}\n\n{warning_text}")
                 else:
-                    st.info(f"**Chất lượng bộ peer: {peer_quality}**\n\n{warning_text}")
-            else:
-                st.success(f"Chất lượng bộ peer: {peer_quality}")
+                    st.caption(f"Chất lượng bộ peer: {peer_quality}")
+                financial_warnings = financial_data.get("qualityWarnings") or []
+                if financial_warnings:
+                    st.warning("Lưu ý dữ liệu: " + "; ".join(str(x) for x in financial_warnings))
 
             peer_pos = v.get("peer_positives") or peer.get("positives") or []
             peer_risks = v.get("peer_risks") or peer.get("risks") or []

@@ -90,14 +90,14 @@ def _styles():
     add("kl", fontName="SL-B", fontSize=7.1, leading=10, textColor=C(MUTED))
     add("kv", fontName="SL-B", fontSize=16, leading=20, textColor=C(NAVY))
     add("ks", fontSize=6.9, leading=9.2, textColor=C(MUTED))
-    add("cell", fontSize=8.2, leading=11.1)
-    add("cellb", fontName="SL-B", fontSize=8.2, leading=11.1, textColor=C(NAVY))
-    add("cellr", fontSize=8.1, leading=11.1, alignment=TA_RIGHT)
-    add("cellh", fontName="SL-B", fontSize=8.1, leading=11.1, textColor=C(NAVY))
+    add("cell", fontSize=8.2, leading=11.5)
+    add("cellb", fontName="SL-B", fontSize=8.2, leading=11.5, textColor=C(NAVY))
+    add("cellr", fontSize=8.1, leading=11.5, alignment=TA_RIGHT)
+    add("cellh", fontName="SL-B", fontSize=8.1, leading=11.5, textColor=C(NAVY))
     add("cover_t", fontName="SL-B", fontSize=24, leading=28, textColor=C(NAVY))
     add("cover_n", fontSize=11, leading=14, textColor=C("#385576"))
     add("rec_t", fontName="SL-B", fontSize=15, leading=18)
-    add("toc0", fontSize=10, leading=24, leftIndent=0, textColor=C(TEXT))
+    add("toc0", fontSize=9.5, leading=21, leftIndent=0, rightIndent=18, textColor=C(TEXT), spaceAfter=3)
     add("bullet", fontSize=8.8, leading=13.7, leftIndent=9, bulletIndent=0, spaceAfter=4, alignment=TA_JUSTIFY)
     add("editor_toc_title", fontName="SL-B", fontSize=24, leading=29, textColor=C(NAVY), spaceAfter=9)
     add("editor_toc_intro", fontSize=10, leading=16, textColor=C(TEXT), spaceAfter=12)
@@ -384,8 +384,8 @@ def chart_news(items, width=CONTENT_W * 0.36, h=1.9):
 
 # ----------------------------------------------------------------------------- thành phần bố cục
 def _tbl(data, widths, header=True, align_right_from=None, zebra=True, extra=None):
-    t = Table(data, colWidths=widths, repeatRows=1 if header else 0)
-    style = [("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    t = Table(data, colWidths=widths, repeatRows=1 if header else 0, splitByRow=1, hAlign="LEFT")
+    style = [("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 4.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 4.5),
              ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
              ("LINEBELOW", (0, 0), (-1, -1), .4, C(LINE))]
     if header:
@@ -541,6 +541,14 @@ def _draw_cover_page(canv, ticker, period_text, profile, results, summary, compa
     x = 20*mm
     canv.setFillColor(C("#59D2C6"));canv.setFont("SL-B", 10)
     canv.drawString(x, h-24*mm, "STOCKLENS    /    EQUITY RESEARCH")
+    try:
+        logo = logo_bytes(ticker, company.get("website"))
+        canv.setFillColor(colors.white)
+        canv.roundRect(w - 42*mm, h - 46*mm, 22*mm, 22*mm, 4*mm, fill=1, stroke=0)
+        canv.drawImage(ImageReader(io.BytesIO(logo)), w - 40*mm, h - 44*mm,
+                       width=18*mm, height=18*mm, preserveAspectRatio=True, mask="auto", anchor="c")
+    except Exception:
+        pass
     canv.setStrokeColor(C("#5DD1CB"));canv.setLineWidth(1.1)
     canv.line(x,h-28*mm,w-20*mm,h-28*mm)
     canv.setFillColor(colors.white);canv.setFont("SL",10)
@@ -644,6 +652,15 @@ def _sec_technical(results):
     d = t.get("data")
     if isinstance(d, pd.DataFrame) and len(d) > 5:
         fl += [Spacer(1, 6), chart_price(d, h=3.2), Spacer(1, 4), chart_rsi_macd(d)]
+    support, resistance = _f(t.get("support_level")), _f(t.get("resistance_level"))
+    sd, rd = _f(t.get("distance_to_support_pct")), _f(t.get("distance_to_resistance_pct"))
+    level_rows = [[Paragraph(h, ST["cellh"]) for h in ("Vùng", "Mức giá", "Khoảng cách", "Trạng thái")],
+                  [_p("Hỗ trợ", "cellb"), _p(_fmt(support, 0, " VND"), "cellr"), _p("N/A" if sd is None else f"{sd:+.2f}%", "cellr"), _p("Pivot low / đáy 60 phiên" if support is not None else "Chưa đủ dữ liệu", "cell")],
+                  [_p("Kháng cự", "cellb"), _p(_fmt(resistance, 0, " VND"), "cellr"), _p("N/A" if rd is None else f"{rd:+.2f}%", "cellr"), _p("Pivot high / đỉnh 60 phiên" if resistance is not None else "Chưa đủ dữ liệu", "cell")]]
+    fl += [Spacer(1, 6), Paragraph("Vùng giá và tín hiệu", ST["h2"]), _tbl(level_rows, [CONTENT_W*.17, CONTENT_W*.25, CONTENT_W*.20, CONTENT_W*.38])]
+    divergence = t.get("divergence") or {}
+    state = "RSI: " + str(t.get("rsi_state") or "N/A") + " · Phân kỳ: " + str(divergence.get("signal") or "chưa phát hiện")
+    fl += [Spacer(1, 4), _callout("Trạng thái & kịch bản hành động", [_p(state, "small"), _p(t.get("action_scenario") or t.get("commentary") or "Chưa đủ dữ liệu để tạo kịch bản.")], color=TEAL, bg="#EEF9F8")]
     sig = t.get("signals")
     if isinstance(sig, dict) and sig:
         labels = {'Positive':'Tích cực','Negative':'Tiêu cực','Neutral':'Trung lập'}
@@ -719,6 +736,36 @@ def _sec_fundamental(results, summary, fd, company):
         fl += [Spacer(1, 6), _tbl(rows, [CONTENT_W * .30] + [CONTENT_W * .70 / n] * n)]
     if f.get("commentary"):
         fl += [Spacer(1, 6), _callout("Nhận định tài chính", [_p(f["commentary"])], color=TEAL, bg="#EEF9F8")]
+    analytics = f.get("financial_analytics") or {}
+    dupont = analytics.get("dupont") or {}
+    current = dupont.get("current") or {}
+    previous = dupont.get("previous") or {}
+    if any(_f(current.get(k)) is not None for k in ("net_margin", "asset_turnover", "equity_multiplier", "roe")):
+        fl += [Spacer(1, 7), Paragraph("Phân rã ROE DuPont 3 yếu tố", ST["h2"])]
+        keys = [("Biên LN ròng", "net_margin", True), ("Vòng quay tài sản", "asset_turnover", False),
+                ("Đòn bẩy vốn chủ", "equity_multiplier", False), ("ROE", "roe", True)]
+        rows = [[Paragraph("Chỉ tiêu", ST["cellh"]), Paragraph("Năm gần nhất", ST["cellh"]),
+                 Paragraph("Năm trước", ST["cellh"]), Paragraph("Thay đổi YoY", ST["cellh"])] ]
+        changes = dupont.get("factor_yoy_change") or {}
+        for label, key, percent in keys:
+            now, before = _f(current.get(key)), _f(previous.get(key))
+            show = lambda value: "N/A" if value is None else (f"{value:.2%}" if percent else f"{value:.2f}x")
+            change = _f(changes.get(key))
+            rows.append([_p(label, "cell"), _p(show(now), "cellr"), _p(show(before), "cellr"),
+                         _p("N/A" if change is None else f"{change:+.1%}", "cellr")])
+        fl.append(_tbl(rows, [CONTENT_W*.34, CONTENT_W*.22, CONTENT_W*.22, CONTENT_W*.22]))
+        if dupont.get("commentary"):
+            fl += [Spacer(1, 4), _callout("Động lực thay đổi ROE", [_p(dupont["commentary"], "small")], color=BLUE, bg="#F3F8FF")]
+    earnings = analytics.get("earnings_quality") or {}
+    if earnings:
+        ratio = _f(earnings.get("ocf_ratio"))
+        level = str(earnings.get("level") or "missing").lower()
+        color = RED if level == "high" else AMBER if level == "warning" else GREEN if level == "good" else MUTED
+        ratio_text = "N/A" if ratio is None else f"{ratio:.1%}"
+        fl += [Spacer(1, 6), _callout("Chất lượng lợi nhuận · OCF/LNST", [
+            _p(f"OCF: {_bn(earnings.get('ocf'))} tỷ đồng · LNST: {_bn(earnings.get('net_income'))} tỷ đồng · OCF/LNST: {ratio_text}", "cellb"),
+            _p(earnings.get("commentary") or "Chưa đủ dữ liệu để đánh giá OCF/LNST.", "small")], color=color,
+            bg="#FFF3F4" if level == "high" else "#FBF7EE" if level == "warning" else "#EEF9F8" if level == "good" else "#F3F7FA")]
     # Phụ lục BCTC; trang riêng để tránh cảnh báo/mẩu bảng nằm lẻ loi ở cuối trang.
     # phụ lục BCTC trích từ dữ liệu gốc
     raw = fd.get("_raw") or {}
@@ -785,21 +832,33 @@ def _sec_valuation(results, fd):
                      ("Chênh lệch", "N/A" if up is None else f"{up * 100:+.1f}%", "so với giá hiện tại", GREEN if (up or 0) >= 0 else RED)]))
     if hist:
         fl += [Spacer(1, 6), chart_valuation(hist, v)]
+    fallback = v.get("fallback") or peer.get("fallback") or {}
+    if bool(v.get("is_fallback", peer.get("is_fallback", fallback.get("is_fallback", False)))):
+        level = v.get("fallback_level") or peer.get("fallback_level") or fallback.get("fallback_level") or "ngành mở rộng"
+        note_text = v.get("fallback_note") or peer.get("fallback_note") or fallback.get("note") or "Mẫu ngành hẹp chưa đủ dữ liệu."
+        fl += [Spacer(1, 4), _callout("Cảnh báo nhóm tham chiếu", [_p(f"Fallback: {level}. {note_text}", "small")], color=AMBER, bg="#FBF7EE")]
     peers = peer.get("peers")
     prow = []
     if isinstance(peers, pd.DataFrame):
         peers = peers.to_dict("records")
     if isinstance(peers, list):
-        peers = _norm_cols([p for p in peers if isinstance(p, dict)], ("roe",))
-        for p in peers[:8]:
+        peers = _norm_cols([p for p in peers if isinstance(p, dict)], ("roe", "net_margin", "revenue_growth"))
+        for p in peers[:5]:
             if isinstance(p, dict):
                 code = p.get("symbol") or p.get("ticker") or p.get("Mã") or ""
                 roe = _ratio(p.get("roe"))
-                prow.append([_p(code, "cell"), Paragraph(_fmt(p.get("pe"), 2, "x"), ST["cellr"]), Paragraph(_fmt(p.get("pb"), 2, "x"), ST["cellr"]),
-                             Paragraph("N/A" if roe is None else f"{roe * 100:.1f}%", ST["cellr"]), _p(p.get("quality") or p.get("peer_quality") or "", "cell")])
+                margin, growth = _ratio(p.get("net_margin")), _ratio(p.get("revenue_growth"))
+                company_name = p.get("name") or p.get("company_name") or code
+                prow.append([_p(code, "cellb"), _p(company_name, "cell"), Paragraph(_fmt(p.get("pe"), 2, "x"), ST["cellr"]),
+                             Paragraph(_fmt(p.get("pb"), 2, "x"), ST["cellr"]), Paragraph("N/A" if roe is None else f"{roe * 100:.1f}%", ST["cellr"]),
+                             Paragraph("N/A" if margin is None else f"{margin * 100:.1f}%", ST["cellr"]),
+                             Paragraph("N/A" if growth is None else f"{growth * 100:.1f}%", ST["cellr"])])
     if prow:
-        rows = [[Paragraph(h, ST["cellh"]) for h in ("Mã peer", "P/E", "P/B", "ROE", "Chất lượng")]] + prow
-        fl += [Paragraph("So sánh với doanh nghiệp cùng ngành", ST["h2"]), _tbl(rows, [CONTENT_W * .2, CONTENT_W * .2, CONTENT_W * .2, CONTENT_W * .2, CONTENT_W * .2])]
+        rows = [[Paragraph(h, ST["cellh"]) for h in ("Mã", "Doanh nghiệp", "P/E", "P/B", "ROE", "Biên LN", "Tăng trưởng DT")]] + prow
+        fl += [Paragraph("So sánh với doanh nghiệp cùng ngành", ST["h2"]), _tbl(rows, [CONTENT_W*.09, CONTENT_W*.27, CONTENT_W*.12, CONTENT_W*.12, CONTENT_W*.12, CONTENT_W*.13, CONTENT_W*.15])]
+        median_roe = _f(v.get("peer_median_roe", peer.get("peer_median_roe")))
+        if median_roe is not None:
+            fl.append(_p(f"Trung vị nhóm peer: ROE {median_roe:.2%} · P/E {_fmt(v.get('peer_median_pe', peer.get('peer_median_pe')), 2, 'x')} · P/B {_fmt(v.get('peer_median_pb', peer.get('peer_median_pb')), 2, 'x')}", "small"))
     for ttl, text in (("Nhận định định giá", v.get("commentary")), ("Nhận định so sánh cùng ngành", v.get("peer_commentary") or peer.get("commentary"))):
         if text:
             fl += [Spacer(1, 6), _callout(ttl, [_p(text)], color=PURPLE, bg="#F6F3FF")]
@@ -849,8 +908,24 @@ def _sec_score(summary, profile, th):
     total = _f(summary.get("score"))
     rows.append([Paragraph("Investment Score", ST["cellb"]), Paragraph("", ST["cellr"]), Paragraph("100%", ST["cellr"]), Paragraph(f"<b>{_fmt(total, 2)}</b>", ST["cellr"])])
     fl += [Spacer(1, 6), _tbl(rows, [CONTENT_W * .4, CONTENT_W * .2, CONTENT_W * .2, CONTENT_W * .2])]
-    pos = th.get("thesis", [])[:0]
+    matrix = summary.get("weight_breakdown") or {}
+    if matrix:
+        fl.append(Paragraph("Bảng trọng số theo phong cách đầu tư", ST["h2"]))
+        style_rows = [[Paragraph(h, ST["cellh"]) for h in ("Phong cách", "BCTC", "Định giá", "Kỹ thuật", "Tin tức", "Rủi ro")]]
+        for style, detail in matrix.items():
+            weights_for_style = detail.get("weights") or {}
+            style_rows.append([_p(detail.get("label") or style, "cellb")] +
+                              [_p(f"{(weights_for_style.get(k) or {}).get('weight_pct', 0)}%", "cellr")
+                               for k in ("fundamental", "valuation", "technical", "news", "risk")])
+        fl.append(_tbl(style_rows, [CONTENT_W*.24] + [CONTENT_W*.152]*5))
     fl += [Spacer(1, 6), _callout("Vì sao ra điểm này", [_p(th["conclusion"])], color=BLUE)]
+    positive = summary.get("positive_drivers") or (summary.get("why_this_score") or {}).get("positive_drivers") or []
+    negative = summary.get("negative_drivers") or (summary.get("why_this_score") or {}).get("negative_drivers") or []
+    pos_body = [_p(x, "small") for x in positive[:6]] or [_p("Chưa có luận điểm tích cực nổi bật từ dữ liệu hiện có.", "small")]
+    neg_body = [_p(x, "small") for x in negative[:6]] or [_p("Chưa ghi nhận rủi ro nổi bật từ dữ liệu hiện có.", "small")]
+    fl += [Spacer(1, 5), _side_by_side(_callout("Yếu tố kéo điểm lên", pos_body, color=GREEN, bg="#EEF9F5", width=CONTENT_W*.47),
+                                       _callout("Yếu tố kéo điểm xuống", neg_body, color=RED, bg="#FFF3F4", width=CONTENT_W*.47),
+                                       CONTENT_W*.5, CONTENT_W*.5, gap=8)]
     if summary.get("missing"):
         fl += [Spacer(1, 4), _callout("Cảnh báo dữ liệu", [_p("Thiếu thành phần: " + ", ".join(map(str, summary["missing"])) + ". StockLens không tự nội suy thành phần bị thiếu.")], color=RED, bg="#FFF3F4")]
     return fl
@@ -946,7 +1021,9 @@ def generate_pdf(ticker, period_text, results, summary, sections, profile, compa
 
     toc = TableOfContents()
     toc.dotsMinLevel = 0
-    toc.levelStyles = [ParagraphStyle("toc0", parent=ST["toc0"], fontName="SL", fontSize=10, leading=24, leftIndent=0, firstLineIndent=0)]
+    toc.levelStyles = [ParagraphStyle("toc0", parent=ST["toc0"], fontName="SL", fontSize=9.5,
+                                      leading=21, leftIndent=0, rightIndent=18, firstLineIndent=0,
+                                      spaceBefore=2, spaceAfter=3)]
 
     plan = [("overview", "Tổng quan doanh nghiệp và ngành")]
     plan += [(k, n) for k, n in (("fundamental", "Phân tích tình hình tài chính"),

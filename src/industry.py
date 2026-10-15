@@ -34,3 +34,27 @@ def same_group_peers(ticker: str, limit: int = 15) -> list[str]:
     if not group:
         return []
     return [k for k, row in _registry().items() if k != info['ticker'] and row.get('group') == group][:limit]
+
+
+def peer_candidate_groups(ticker: str, limit: int = 35) -> list[dict]:
+    """Return verified narrow-to-broad local peer universes for fallback.
+
+    The registry has industry and sector labels but no official VN30/VNMidcap
+    membership, so the function never invents an index fallback.
+    """
+    info = industry_for(ticker)
+    symbol, registry = info.get('ticker'), _registry()
+    candidates = []
+    industry = info.get('industry')
+    if industry:
+        peers = [key for key, row in registry.items()
+                 if key != symbol and row.get('industry') == industry]
+        candidates.append({"level": "industry", "label": industry, "symbols": peers[:limit]})
+    group = info.get('group')
+    if group:
+        peers = [key for key, row in registry.items()
+                 if key != symbol and row.get('group') == group]
+        if not candidates or set(peers) != set(candidates[0]["symbols"]):
+            candidates.append({"level": "sector", "label": info.get("sector") or group,
+                               "symbols": peers[:limit]})
+    return candidates
