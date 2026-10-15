@@ -259,7 +259,7 @@ def _p_technical(results):
         trend = "Giá dao động quanh các đường trung bình động, xu hướng chưa rõ ràng."
     extra = ""
     if rsi is not None:
-        extra = (f" RSI(14) ở {rsi:.1f}, thuộc vùng quá bán nên có thể xuất hiện nhịp hồi kỹ thuật." if rsi < 30
+        extra = (f" RSI(14) ở {rsi:.1f}, thuộc vùng quá bán; đây là trạng thái điều kiện, cần xác nhận bằng giá và khối lượng trước khi hành động, không đồng nghĩa chắc chắn hồi phục." if rsi < 30
                  else f" RSI(14) ở {rsi:.1f}, thuộc vùng quá mua." if rsi > 70 else f" RSI(14) ở {rsi:.1f}, chưa ở vùng cực trị.")
     return trend + extra
 
@@ -375,6 +375,23 @@ def build_thesis(ticker, company, results, summary, financial_data, profile="Câ
     comp = (summary or {}).get("component_scores") or {}
     names = {"fundamental": "Tài chính", "valuation": "Định giá", "technical": "Kỹ thuật", "news": "Tin tức", "risk": "Rủi ro/An toàn"}
     vals = {k: _f(v) for k, v in comp.items() if _f(v) is not None and k in names}
+    supplied_why = (summary or {}).get("why_this_score") or {}
+    positive_drivers = list(supplied_why.get("positive_drivers") or
+                            (summary or {}).get("positive_drivers") or [])
+    negative_drivers = list(supplied_why.get("negative_drivers") or
+                            (summary or {}).get("negative_drivers") or [])
+    if not positive_drivers or not negative_drivers:
+        for key, result in (results or {}).items():
+            if not isinstance(result, dict):
+                continue
+            if not positive_drivers:
+                positive_drivers.extend(
+                    f"{names.get(key, key)}: {item}" for item in result.get("positives", []) or []
+                )
+            if not negative_drivers:
+                negative_drivers.extend(
+                    f"{names.get(key, key)}: {item}" for item in result.get("risks", []) or []
+                )
     conclusion = ""
     if vals and rec["score"] is not None:
         best, worst = max(vals, key=vals.get), min(vals, key=vals.get)
@@ -384,4 +401,10 @@ def build_thesis(ticker, company, results, summary, financial_data, profile="Câ
     else:
         conclusion = "Chưa đủ dữ liệu để kết luận tổng hợp; StockLens không tự nội suy thành phần bị thiếu."
     return {"recommendation": rec, "thesis": thesis, "risks": risks,
+            "positive_drivers": list(dict.fromkeys(positive_drivers))[:8],
+            "negative_drivers": list(dict.fromkeys(negative_drivers))[:8],
+            "why_this_score": {
+                "positive_drivers": list(dict.fromkeys(positive_drivers))[:8],
+                "negative_drivers": list(dict.fromkeys(negative_drivers))[:8],
+            },
             "limitations": limitations, "conclusion": conclusion}

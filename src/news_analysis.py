@@ -830,6 +830,142 @@ def _classification(
 
 
 # =========================================================
+# 11b. NEWS INTELLIGENCE (phân loại chủ đề, gộp trùng, tách tín hiệu)
+# =========================================================
+# Toàn bộ mục này là heuristic DỰA TRÊN TIÊU ĐỀ. Không thay thế đọc toàn văn
+# bài báo và không được diễn giải như kết luận chắc chắn về tác động kinh doanh.
+
+_NEWS_CATEGORY_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Kết quả kinh doanh", (
+        "lợi nhuận", "doanh thu", "kết quả kinh doanh", "báo cáo tài chính",
+        "lãi ròng", "lợi nhuận sau thuế", "lũy kế", "biên lợi nhuận", "eps",
+    )),
+    ("Cổ tức & cổ đông", (
+        "cổ tức", "chia thưởng", "đại hội đồng cổ đông", "đhđcđ", "cổ đông",
+        "phát hành", "esop", "cổ phiếu quỹ", "tăng vốn", "chào bán", "niêm yết",
+    )),
+    ("Đầu tư & dự án", (
+        "dự án", "đầu tư", "hợp tác", "sáp nhập", "mua lại", "m&a", "khởi công",
+        "ký kết", "thành lập", "liên doanh", "mở rộng", "nhà máy", "trung tâm",
+        "góp vốn", "chuyển đổi số",
+    )),
+    ("Quản trị & pháp lý", (
+        "nhân sự", "bổ nhiệm", "từ nhiệm", "chủ tịch", "tổng giám đốc",
+        "kế toán trưởng", "vi phạm", "xử phạt", "thanh tra", "khởi tố",
+        "đình chỉ", "kiểm toán", "công bố thông tin",
+    )),
+    ("Phân tích & khuyến nghị", (
+        "khuyến nghị", "giá mục tiêu", "mục tiêu giá", "xếp hạng", "phân tích",
+        "nhận định", "đánh giá", "dự báo", "dự phóng", "triển vọng", "opinion",
+        "quan điểm", "định giá",
+    )),
+    ("Giá & dòng tiền", (
+        "tăng giá", "giảm giá", "mất giá", "lao dốc", "bật tăng", "dòng tiền",
+        "khối ngoại", "thanh khoản", "vốn hóa", "chốt lời", "bắt đáy", "cổ phiếu",
+        "vn-index", "phiên",
+    )),
+)
+
+_NEWS_OPINION_MARKERS = (
+    "dự báo", "dự phóng", "nhận định", "đánh giá", "opinion", "quan điểm",
+    "khuyến nghị", "mục tiêu giá", "giá mục tiêu", "liệu", "có nên", "?",
+)
+
+
+def _news_category(title: str) -> str:
+    low = str(title or "").lower()
+    for category, keywords in _NEWS_CATEGORY_RULES:
+        if any(keyword in low for keyword in keywords):
+            return category
+    return "Khác"
+
+
+def _news_is_opinion(title: str, category: str) -> bool:
+    low = str(title or "").lower()
+    return category == "Phân tích & khuyến nghị" or any(
+        marker in low for marker in _NEWS_OPINION_MARKERS
+    )
+
+
+def _news_tokens(title: str) -> set[str]:
+    return {token for token in _normalize_title_key(title).split() if len(token) > 2}
+
+
+def _merge_duplicate_news(items: list[dict]) -> list[dict]:
+    """Gộp các tiêu đề gần trùng (Jaccard >= 0.6), giữ bản đầu và ghi nguồn gộp."""
+    merged: list[dict] = []
+    for item in items:
+        tokens = _news_tokens(item.get("title", ""))
+        duplicate_of = None
+        for kept in merged:
+            other = kept["_tokens"]
+            if not tokens or not other:
+                continue
+            jaccard = len(tokens & other) / len(tokens | other)
+            if jaccard >= 0.6:
+                duplicate_of = kept
+                break
+        if duplicate_of is None:
+            item["_tokens"] = tokens
+            item["merged_sources"] = [item.get("source_name") or "N/A"]
+            item["duplicate_count"] = 1
+            merged.append(item)
+        else:
+            duplicate_of["duplicate_count"] += 1
+            source = item.get("source_name") or "N/A"
+            if source not in duplicate_of["merged_sources"]:
+                duplicate_of["merged_sources"].append(source)
+    for item in merged:
+        item.pop("_tokens", None)
+    return merged
+
+
+def enrich_news_items(items: list[dict]) -> list[dict]:
+    """Gắn nhãn chủ đề, loại bằng chứng và gộp tiêu đề trùng cho từng tin."""
+    if not items:
+        return []
+    enriched = _merge_duplicate_news([dict(item) for item in items])
+    for item in enriched:
+        title = item.get("title") or ""
+        category = _news_category(title)
+        opinion = _news_is_opinion(title, category)
+        price_only = category == "Giá & dòng tiền"
+        item["category"] = category
+        item["evidence_type"] = "Ý kiến/nhận định" if opinion else "Sự kiện có thể xác minh"
+        item["is_price_only"] = price_only
+        item["is_opinion"] = opinion
+        if price_only:
+            item["business_impact"] = "Chỉ phản ánh biến động giá, chưa phải thông tin cơ bản."
+        elif opinion:
+            item["business_impact"] = "Nhận định/khuyến nghị của bên thứ ba; cần kiểm chứng bằng dữ liệu."
+        else:
+            tone = {"Positive": "Có thể hỗ trợ", "Negative": "Cần theo dõi rủi ro"}.get(
+                item.get("sentiment"), "Trung tính về mặt thông tin"
+            )
+            item["business_impact"] = f"{tone} (đọc theo tiêu đề, chưa phân tích toàn văn)."
+        item["impact_note"] = (
+            "Tác động kinh doanh được suy ra từ chủ đề và sắc thái tiêu đề, "
+            "không phải kết luận tài chính đã kiểm chứng."
+        )
+    return enriched
+
+
+def news_intelligence_summary(items: list[dict]) -> dict:
+    """Tổng hợp số lượng theo chủ đề và loại bằng chứng."""
+    categories: dict[str, int] = {}
+    for item in items:
+        key = item.get("category") or "Khác"
+        categories[key] = categories.get(key, 0) + 1
+    return {
+        "categories": categories,
+        "price_only": sum(1 for item in items if item.get("is_price_only")),
+        "opinion": sum(1 for item in items if item.get("is_opinion")),
+        "verified_events": sum(1 for item in items if not item.get("is_opinion")),
+        "duplicates_merged": sum(int(item.get("duplicate_count") or 1) - 1 for item in items),
+    }
+
+
+# =========================================================
 # 12. EMPTY RESULT
 # =========================================================
 
@@ -863,6 +999,14 @@ def _empty_result(
             "Positive": 0,
             "Neutral": 0,
             "Negative": 0,
+        },
+
+        "intelligence": {
+            "categories": {},
+            "price_only": 0,
+            "opinion": 0,
+            "verified_events": 0,
+            "duplicates_merged": 0,
         },
 
         "article_count": 0,
@@ -1278,6 +1422,14 @@ def analyze_news(
         )
 
     # =====================================================
+    # NEWS INTELLIGENCE (gộp tiêu đề trùng + phân loại chủ đề)
+    # =====================================================
+
+    items = enrich_news_items(items)
+
+    intelligence = news_intelligence_summary(items)
+
+    # =====================================================
     # CALCULATE SCORE
     # =====================================================
 
@@ -1386,10 +1538,14 @@ def analyze_news(
             f"{counts['Positive']} tin tích cực, "
             f"{counts['Neutral']} tin trung tính và "
             f"{counts['Negative']} tin tiêu cực. "
+            f"{intelligence['price_only']} tin chỉ phản ánh biến động giá, "
+            f"{intelligence['opinion']} tin là nhận định/khuyến nghị của bên thứ ba "
+            f"(chưa phải sự kiện đã kiểm chứng). "
             "Tin mới và tin có mã cổ phiếu xuất hiện "
             "trực tiếp trong tiêu đề được ưu tiên trọng số. "
             "Tiêu đề đồng thời chứa tín hiệu tốt và xấu "
-            "được xếp Neutral."
+            "được xếp Neutral. Phân loại chủ đề và tách tín hiệu "
+            "giá / nhận định là heuristic theo tiêu đề."
         )
 
     else:
@@ -1430,6 +1586,10 @@ def analyze_news(
 
         "sentiment_counts": (
             counts
+        ),
+
+        "intelligence": (
+            intelligence
         ),
 
         "article_count": (

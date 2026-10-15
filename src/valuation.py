@@ -364,6 +364,7 @@ def analyze_valuation(
     info: dict,
     ticker: str | None = None,
     current_price: float | None = None,
+    peer_symbols: list[str] | tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     """
     Phân tích định giá.
@@ -890,13 +891,13 @@ def analyze_valuation(
                 from .csv_peer import analyze_csv_peers
                 peer_valuation = analyze_csv_peers(
                     ticker=resolved_ticker, current_price=current_price,
-                    financial_data=info, max_peers=8,
+                    financial_data=info, max_peers=8, peer_symbols=peer_symbols,
                 ) or peer_valuation
             elif os.environ.get('STOCKLENS_ENABLE_PEER_API','0')=='1':
                 from .peer_valuation import analyze_peer_valuation
                 peer_valuation = analyze_peer_valuation(
                     ticker=resolved_ticker, current_price=current_price, max_peers=6,
-                    financial_data=info, request_delay=1,
+                    financial_data=info, peer_symbols=peer_symbols, request_delay=1,
                 ) or peer_valuation
         except Exception as exc:
             peer_valuation = {**peer_valuation,
@@ -1001,14 +1002,31 @@ def analyze_valuation(
         "peer_median_pe": peer_median_pe,
 
         "peer_median_pb": peer_median_pb,
+        "peer_median_roe": _num(peer_valuation.get("peer_median_roe")),
+        "pe_peers_median": _num(peer_valuation.get("pe_peers_median", peer_median_pe)),
+        "pb_peers_median": _num(peer_valuation.get("pb_peers_median", peer_median_pb)),
+        "roe_peers_median": _num(peer_valuation.get("roe_peers_median")),
 
         "peer_implied_price_pe": peer_implied_price_pe,
 
         "peer_implied_price_pb": peer_implied_price_pb,
 
         "peer_fair_value": peer_fair_value,
+        "fair_value_pe": _num(peer_valuation.get("fair_value_pe")),
+        "fair_value_pb": _num(peer_valuation.get("fair_value_pb")),
 
         "peer_upside_downside": peer_upside_downside,
+        "peer_upside_commentary": peer_valuation.get("upside_commentary"),
+        "scenarios": peer_valuation.get("scenarios") or {"available": False, "reason": "Chưa có kịch bản peer."},
+        "peers_table": list(peer_valuation.get("peers_table", []) or []),
+        "is_fallback": bool(peer_valuation.get("is_fallback", False)),
+        "fallback_level": peer_valuation.get("fallback_level"),
+        "fallback_note": peer_valuation.get("fallback_note"),
+        "fallback": peer_valuation.get("fallback") or {
+            "is_fallback": bool(peer_valuation.get("is_fallback", False)),
+            "fallback_level": peer_valuation.get("fallback_level"),
+            "note": peer_valuation.get("fallback_note"),
+        },
 
         "peer_quality_status": peer_valuation.get("peer_quality_status"),
 
