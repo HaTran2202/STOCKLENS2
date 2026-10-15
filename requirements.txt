@@ -12,3 +12,4 @@ reportlab>=4.2,<5
 vnstock==4.0.8
 svglib==1.5.1
 Pillow>=10,<13
+pillow-avif-plugin>=1.4,<2

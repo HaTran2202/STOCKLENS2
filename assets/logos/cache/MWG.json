@@ -1,0 +1,11 @@
+{
+ "source": "site:og:image(logo)",
+ "url": "https://cdnv2-tmdt.tgdd.vn/webmwg/production-fe/mwgvn/static/public/logos/logo%20MWG%20.png",
+ "domain": "mwg.vn",
+ "ticker": "MWG",
+ "width": 838,
+ "height": 328,
+ "format": "PNG",
+ "sha256": "b169ae8c38de817e3399db5e2b2b9e1b2caed17332b01030b818d76a4fabfccd",
+ "fetched_at": "2026-10-15T18:04:13+00:00"
+}

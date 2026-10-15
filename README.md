@@ -197,6 +197,23 @@ PDF được tạo từ dữ liệu phân tích đang hiển thị. Biểu đồ
 
 Các thư viện ReportLab, Matplotlib, svglib và Pillow đã có trong requirements.txt.
 
+### Logo doanh nghiệp tự động theo mã cổ phiếu
+
+Logo ở bìa và header báo cáo được tự động tìm theo ticker, không cần đặt logo thủ công cho từng mã. Thứ tự ưu tiên:
+
+1. Logo bạn tự thay: `assets/logos/<MÃ>.png|jpg|webp|svg`.
+2. Cache đã xác minh: `assets/logos/cache/<MÃ>.png` (kèm `<MÃ>.json` ghi nguồn/URL/ngày tải).
+3. Nguồn trực tuyến đã kiểm chứng, tra theo **tên miền** doanh nghiệp (không phải favicon tuỳ tiện):
+   logo.dev (nếu có token) → Hunter.io (`logos.hunter.io`) → ảnh thương hiệu trên chính website doanh nghiệp (apple-touch-icon / icon / og:image có tên chứa "logo").
+4. Monogram (huy hiệu chữ cái) — luôn có, kể cả khi không có mạng.
+
+Ảnh tải về đều được kiểm tra (HTTP, kích thước tệp, giải mã ảnh, kích thước pixel, tỷ lệ khung, ảnh trắng, ảnh nền gradient mờ) trước khi dùng và trước khi ghi cache; cache hợp lệ không bị ghi đè bằng ảnh chưa xác minh. Ticker được chuẩn hoá và kiểm tra trước khi dùng để tạo đường dẫn tệp.
+
+- Ánh xạ ticker → tên miền: `data/company_domains.json` (seed dùng được offline) + `assets/logos/cache/_domains.json` (tên miền học thêm khi chạy) + tra cứu trực tuyến qua vnstock khi chưa biết.
+- Tuỳ chọn chất lượng cao hơn: đặt biến môi trường `LOGODEV_TOKEN` (khoá publishable `pk_...` của [logo.dev](https://logo.dev)) — khi có token, logo.dev được ưu tiên trước Hunter.
+- Chạy hoàn toàn offline (chỉ dùng logo tự đặt + cache + monogram): đặt `STOCKLENS_LOGO_OFFLINE=1`.
+- Nếu không tải được logo, ứng dụng vẫn phân tích và xuất PDF bình thường (dùng monogram, không lỗi).
+
 ## 12. Dữ liệu và quyền riêng tư
 
 - .env: khóa DNSE và cấu hình SMTP; giữ riêng trên từng máy.
